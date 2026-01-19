@@ -1,0 +1,93 @@
+
+
+services:
+  # --- INFRASTRUCTURE ---
+  postgres:
+    image: postgres:16-alpine
+    container_name: registryx-db
+    environment:
+      POSTGRES_USER: registryx
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: registryx
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../backend/migrations:/docker-entrypoint-initdb.d
+    networks:
+      - registryx-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: registryx-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - registryx-net
+
+  minio:
+    image: minio/minio
+    container_name: registryx-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - registryx-net
+
+  # --- APPLICATIONS ---
+  backend:
+    build: ../backend
+    container_name: registryx-backend
+    ports:
+      - "5000:5000"
+    environment:
+      SERVER_PORT: ":5000"
+      DATABASE_URL: "postgres://registryx:${POSTGRES_PASSWORD}@postgres:5432/registryx?sslmode=disable"
+      REDIS_ADDR: "redis:6379"
+      MINIO_ENDPOINT: "minio:9000"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      S3_BUCKET: "${S3_BUCKET}"
+      MINIO_SECURE: "${MINIO_SECURE}"
+      POLICY_ENVIRONMENT: "${POLICY_ENVIRONMENT}"
+      JWT_SECRET: "${JWT_SECRET}"
+      ENABLE_IMMUTABLE_TAGS: "false"
+      ENABLE_COST_INTELLIGENCE: "true"
+      # SMTP Configuration for Email/Forgot Password
+      SMTP_HOST: "smtp.gmail.com"
+      SMTP_PORT: "587"
+      SMTP_USER: "${SMTP_USER}"
+      SMTP_PASS: "${SMTP_PASS}" # Reads from .env file
+      SMTP_FROM: "registryx-noreply@example.com"
+    depends_on:
+      - postgres
+      - redis
+      - minio
+    networks:
+      - registryx-net
+
+  frontend:
+    build: ../frontend
+    container_name: registryx-frontend
+    ports:
+      - "5173:80"
+    environment:
+      VITE_API_URL: "http://localhost:5000"
+    depends_on:
+      - backend
+    networks:
+      - registryx-net
+
+networks:
+  registryx-net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  minio_data:
