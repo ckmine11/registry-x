@@ -72,13 +72,29 @@ For production, we recommend running RegistryX on a **Linux VPS** (Ubuntu 22.04+
 
 #### Kubernetes Deployment
 We provide full K8s manifests in `deploy/k8s/`.
-1.  **Apply Manifests**:
+
+1.  **Build & Push Images**:
+    You must build the images and push them to a registry (like Docker Hub) so your cluster can pull them.
+    ```bash
+    # Backend
+    docker build -t ckmine11/registryx-backend:latest ./backend
+    docker push ckmine11/registryx-backend:latest
+
+    # Frontend
+    docker build -t ckmine11/registryx-frontend:latest ./frontend
+    docker push ckmine11/registryx-frontend:latest
+    ```
+
+2.  **Apply Manifests**:
     ```bash
     kubectl apply -f deploy/k8s/
     ```
-2.  **Verify**:
+
+3.  **Verify & Access**:
     ```bash
     kubectl get pods -n registryx
+    # Port forward to access locally (if not using LoadBalancer/Ingress)
+    kubectl port-forward svc/frontend-svc 5173:80 -n registryx
     ```
 
 3.  **Access the Dashboard**
