@@ -97,9 +97,16 @@ We provide full K8s manifests in `deploy/k8s/`.
     kubectl port-forward svc/frontend-svc 5173:80 -n registryx
     ```
 
-3.  **Access the Dashboard**
-    *   **Frontend UI**: [http://localhost:5173](http://localhost:5173)
-    *   **Registry API**: [http://localhost:5000](http://localhost:5000)
+4.  **Domain & SSL Configuration (Optional)**
+    To run on a public domain with HTTPS:
+    *   Update `deploy/docker-compose.yml` (or ConfigMap) with `SERVER_URL=https://your-domain.com`.
+    *   Use the provided Nginx config in `deploy/nginx/production.conf`.
+    *   Point your domain to the server IP.
+
+### 🌐 Access the Application
+
+1.  **Frontend Dashboard**: [http://localhost:5173](http://localhost:5173) (or your domain)
+2.  **Registry API**: [http://localhost:5000](http://localhost:5000)
 
 4.  **Default Credentials**
     *   **Username**: `admin`
