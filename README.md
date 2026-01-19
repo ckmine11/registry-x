@@ -61,6 +61,26 @@ RegistryX follows a microservices-ready architecture:
     docker-compose -f deploy/docker-compose.yml up --build -d
     ```
 
+### ☁️ Cloud / VPS Deployment
+
+For production, we recommend running RegistryX on a **Linux VPS** (Ubuntu 22.04+) or **Kubernetes**.
+
+#### Recommended VPS Providers
+*   **DigitalOcean** (Basic Droplet)
+*   **AWS EC2** (t3.medium or larger)
+*   **Hetzner / Linode**
+
+#### Kubernetes Deployment
+We provide full K8s manifests in `deploy/k8s/`.
+1.  **Apply Manifests**:
+    ```bash
+    kubectl apply -f deploy/k8s/
+    ```
+2.  **Verify**:
+    ```bash
+    kubectl get pods -n registryx
+    ```
+
 3.  **Access the Dashboard**
     *   **Frontend UI**: [http://localhost:5173](http://localhost:5173)
     *   **Registry API**: [http://localhost:5000](http://localhost:5000)
