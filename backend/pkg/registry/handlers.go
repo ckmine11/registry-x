@@ -165,8 +165,7 @@ func (h *Handler) PutBlobUpload(w http.ResponseWriter, r *http.Request) {
 	
 	// In a real registry, we would concatenate chunks. 
 	// For this MVP, we support Monolithic Upload (PUT with data) by writing directly to final path.
-	// If it was a chunked upload, the data is in uploads/<uuid>, and we should move it.
-	// We'll implementing a hybrid: Try to read body.
+	// We also support PATCH + PUT workflow by checking for data in uploads/<uuid>.
 	
 	blobPath := path.Join("blobs", digest)
 	writer, err := h.Storage.Writer(r.Context(), blobPath)
@@ -177,12 +176,39 @@ func (h *Handler) PutBlobUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer writer.Close()
 
+	var totalBytes int64 = 0
+
+	// 1. Check for data uploaded via PATCH (in uploads/<uuid>)
+	tempPath := path.Join("uploads", uploadID)
+	// Check existence of temp file
+	if _, err := h.Storage.Stat(r.Context(), tempPath); err == nil {
+		// Temp file exists, copy it
+		reader, err := h.Storage.Reader(r.Context(), tempPath)
+		if err == nil {
+			n, err := io.Copy(writer, reader)
+			reader.Close()
+			if err == nil {
+				totalBytes += n
+				fmt.Printf("Merged %d bytes from session %s\n", n, uploadID)
+				// Cleanup temp file after successful merge
+				h.Storage.Delete(r.Context(), tempPath)
+			} else {
+				fmt.Printf("Failed to copy from temp file: %v\n", err)
+				http.Error(w, "storage copy error", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	// 2. Write data from PUT body (if any)
+	// Even if body is empty, io.Copy returns 0, nil which is fine.
 	n, err := io.Copy(writer, r.Body)
 	if err != nil {
 		fmt.Printf("Blob write failed: %v\n", err)
 		http.Error(w, "failed to write blob", http.StatusInternalServerError)
 		return
 	}
+	totalBytes += n
 	
 	fmt.Printf("Wrote blob %s (%d bytes)\n", digest, n)
 	
@@ -503,7 +529,9 @@ func (h *Handler) GetManifest(w http.ResponseWriter, r *http.Request) {
 	
 	// Fetch metadata
 	mediaType := "application/vnd.docker.distribution.manifest.v2+json" // Default
-	digest, _, mt, errDet := h.Metadata.GetManifestDetails(r.Context(), manifestID)
+    var digest, mt string
+	var errDet error
+	digest, _, mt, _, _, errDet = h.Metadata.GetManifestDetails(r.Context(), manifestID)
 	if errDet == nil && mt != "" {
 		mediaType = mt
 	}
@@ -554,6 +582,7 @@ func (h *Handler) GetManifest(w http.ResponseWriter, r *http.Request) {
 			// 4. Evaluate Policy
 			// Construct Input
 			user := getUserFromContext(r)
+			isScanned := summary.Status == "completed"
 			
 			input := policy.EvaluationInput{
 				Repository: repoName,
@@ -563,8 +592,11 @@ func (h *Handler) GetManifest(w http.ResponseWriter, r *http.Request) {
 				Vulnerabilities: policy.VulnerabilitySummary{
 					Critical: summary.Critical,
 					High:     summary.High,
+					Medium:   summary.Medium,
+					Low:      summary.Low,
 				},
-				IsSigned: isSigned,
+				IsSigned:  isSigned,
+				IsScanned: isScanned,
 			}
 			
 			allowed, violations, err := h.Policy.Evaluate(r.Context(), input)
@@ -572,13 +604,21 @@ func (h *Handler) GetManifest(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Policy eval error: %v\n", err)
 				// Open fail? or Fail closed? Let's fail open for errors to avoid blocking prod on bug.
 			} else if !allowed {
-				log.Printf("Policy DENIED pull for %s:%s. Violations: %v\n", repoName, reference, violations)
+				// Special Case: Allow scanner to pull unscanned images
+				remoteAddr := r.RemoteAddr
+				isInternal := strings.HasPrefix(remoteAddr, "127.0.0.1") || strings.HasPrefix(remoteAddr, "localhost") || strings.Contains(remoteAddr, "[::1]")
 				
-				// Return 403 Forbidden with OCI Error
-				w.WriteHeader(http.StatusForbidden)
-				jsonErrors := fmt.Sprintf(`{"errors": [{"code": "DENIED", "message": "policy violation: %s"}]}`, strings.Join(violations, "; "))
-				w.Write([]byte(jsonErrors))
-				return
+				if isInternal {
+					log.Printf("[Policy] Bypassing security block for internal system pull at %s\n", remoteAddr)
+				} else {
+					log.Printf("Policy DENIED pull for %s:%s (Remote: %s). Violations: %v\n", repoName, reference, remoteAddr, violations)
+					
+					// Return 403 Forbidden with OCI Error
+					w.WriteHeader(http.StatusForbidden)
+					jsonErrors := fmt.Sprintf(`{"errors": [{"code": "DENIED", "message": "policy violation: %s"}]}`, strings.Join(violations, "; "))
+					w.Write([]byte(jsonErrors))
+					return
+				}
 			}
 			
 			// Policy passed (or fail-open on error) - Track Pull (Only on GET/Download)

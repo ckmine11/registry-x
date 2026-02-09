@@ -24,7 +24,7 @@ const (
 )
 
 // AuthMiddleware handles Docker Registry authentication challenges.
-func AuthMiddleware(jwtSecret string, rdb *redis.Client) func(http.Handler) http.Handler {
+func AuthMiddleware(jwtSecret string, rdb *redis.Client, backendURL string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Debug Log
@@ -44,7 +44,7 @@ func AuthMiddleware(jwtSecret string, rdb *redis.Client) func(http.Handler) http
 
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
-			sendChallenge(w, r)
+			sendChallenge(w, r, backendURL)
 			return
 		}
 
@@ -62,7 +62,7 @@ func AuthMiddleware(jwtSecret string, rdb *redis.Client) func(http.Handler) http
 
 		if err != nil || !token.Valid {
 			fmt.Printf("Invalid token: %v\n", err)
-			sendChallenge(w, r)
+			sendChallenge(w, r, backendURL)
 			return
 		}
 
@@ -80,7 +80,7 @@ func AuthMiddleware(jwtSecret string, rdb *redis.Client) func(http.Handler) http
 					exists, err := rdb.Exists(r.Context(), "session:"+sid).Result()
 					if err != nil || exists == 0 {
 						fmt.Printf("[Auth] Session %s expired or revoked\n", sid)
-						sendChallenge(w, r)
+						sendChallenge(w, r, backendURL)
 						return
 					}
 					// Update last active
@@ -99,15 +99,15 @@ func AuthMiddleware(jwtSecret string, rdb *redis.Client) func(http.Handler) http
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		} else {
-			sendChallenge(w, r)
+			sendChallenge(w, r, backendURL)
 		}
 	})
 	}
 }
 
 // sendChallenge returns the 401 header that tells Docker where to get a token.
-func sendChallenge(w http.ResponseWriter, r *http.Request) {
-	// Construct the realm URL (assuming localhost:5000 for now)
+func sendChallenge(w http.ResponseWriter, r *http.Request, backendURL string) {
+	// Construct the realm URL using the configured backend URL
 	// scope should match the request (e.g. repository:my-image:pull)
 	// We need to construct the scope string based on the request URL.
 	// URL Pattern: /v2/<name>/...
@@ -130,8 +130,8 @@ func sendChallenge(w http.ResponseWriter, r *http.Request) {
 		// The 'scope' in the Www-Authenticate header is what we *require*.
 	}
 
-	// Dynamic realm
-	realm := "http://localhost:5000/auth/token"
+	// Dynamic realm using configured backend URL
+	realm := backendURL + "/auth/token"
 	service := "registryx"
 	
 	authHeader := fmt.Sprintf(`Bearer realm="%s",service="%s"`, realm, service)

@@ -39,7 +39,8 @@ func (s *Service) TokenHandler(w http.ResponseWriter, r *http.Request) {
 		validUser, err := s.ValidateCredentials(r.Context(), rawUser, rawPass)
 		if err != nil {
 			fmt.Printf("Auth failed for user %s: %v\n", rawUser, err)
-			w.Header().Set("Www-Authenticate", `Bearer realm="http://localhost:5000/auth/token",service="registryx"`)
+			realm := s.Config.BackendURL + "/auth/token"
+			w.Header().Set("Www-Authenticate", fmt.Sprintf(`Bearer realm="%s",service="registryx"`, realm))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Library, LogOut, Search, User, Shield, Settings, GitBranch, DollarSign, Activity, Bell } from 'lucide-react';
+import { LayoutDashboard, Library, LogOut, Search, User, Shield, Settings, GitBranch, DollarSign, Activity, Bell, Lock, AlertCircle } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -11,6 +11,8 @@ export default function Layout() {
     const location = useLocation();
     const navigate = useNavigate();
     const [enableCostIntelligence, setEnableCostIntelligence] = React.useState(true);
+    const [licensePlan, setLicensePlan] = React.useState('Loading...');
+    const [allowedFeatures, setAllowedFeatures] = React.useState<string[]>([]);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = React.useState(false);
     const [searchQuery, setSearchQuery] = React.useState('');
     const [showSearchResults, setShowSearchResults] = React.useState(false);
@@ -32,9 +34,19 @@ export default function Layout() {
         import('../lib/api').then(({ api }) => {
             api.getSystemConfig().then(res => {
                 setEnableCostIntelligence(res.data.enableCostIntelligence);
-            }).catch(err => console.error("Failed to fetch system config", err));
+                setLicensePlan(res.data.license_plan || 'Community Edition');
+                setAllowedFeatures(res.data.features || []);
+            }).catch(err => {
+                console.error("Failed to fetch system config", err);
+                setLicensePlan('Unknown');
+            });
         });
     }, []);
+
+    const isLocked = (feature: string) => {
+        if (!allowedFeatures) return true; // Default locked if not loaded
+        return !allowedFeatures.includes(feature);
+    };
 
     // Close dropdowns when clicking outside
     React.useEffect(() => {
@@ -92,7 +104,17 @@ export default function Layout() {
                         {!isSidebarCollapsed && (
                             <div className="flex flex-col">
                                 <span className="font-black text-xl tracking-tighter bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 uppercase">RegistryX</span>
-                                <span className="text-[10px] text-blue-400 font-mono tracking-widest uppercase opacity-70">Container Registry</span>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-blue-400 font-mono tracking-widest uppercase opacity-70">
+                                        {licensePlan}
+                                    </span>
+                                    {licensePlan !== 'Enterprise' && (
+                                        <Link to="/app/settings" title="Upgrade to Enterprise" className="hover:text-amber-400 transition-colors">
+                                            <AlertCircle size={10} className="text-amber-500" />
+                                        </Link>
+                                    )}
+
+                                </div>
                             </div>
                         )}
                     </div>
@@ -104,13 +126,20 @@ export default function Layout() {
                             <h3 className="px-4 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Main</h3>
                         )}
                         <nav className="space-y-1">
-                            <NavLink to="/dashboard" icon={<LayoutDashboard />} label="Dashboard" collapsed={isSidebarCollapsed} />
-                            <NavLink to="/repositories" icon={<Library />} label="Repositories" collapsed={isSidebarCollapsed} />
-                            <NavLink to="/lineage" icon={<GitBranch />} label="Lineage" collapsed={isSidebarCollapsed} />
+                            <NavLink to="/app/dashboard" icon={<LayoutDashboard />} label="Dashboard" collapsed={isSidebarCollapsed} />
+                            <NavLink to="/app/repositories" icon={<Library />} label="Repositories" collapsed={isSidebarCollapsed} />
+                            <NavLink to="/app/lineage" icon={<GitBranch />} label="Lineage" collapsed={isSidebarCollapsed} />
                             {enableCostIntelligence && (
-                                <NavLink to="/costs" icon={<DollarSign />} label="Cost Intelligence" collapsed={isSidebarCollapsed} />
+                                <NavLink
+                                    to="/app/costs"
+                                    icon={<DollarSign />}
+                                    label="Cost Intelligence"
+                                    collapsed={isSidebarCollapsed}
+                                    locked={isLocked('cost_intel')}
+                                />
                             )}
                         </nav>
+
                     </div>
 
                     <div>
@@ -118,12 +147,19 @@ export default function Layout() {
                             <h3 className="px-4 text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] mb-4">Settings</h3>
                         )}
                         <nav className="space-y-1">
-                            <NavLink to="/policies" icon={<Shield />} label="Policies" collapsed={isSidebarCollapsed} />
+                            <NavLink
+                                to="/app/policies"
+                                icon={<Shield />}
+                                label="Security Policies"
+                                collapsed={isSidebarCollapsed}
+                                locked={isLocked('policy_engine')}
+                            />
                             {user?.role === 'admin' && (
-                                <NavLink to="/sessions" icon={<Activity />} label="Sessions" collapsed={isSidebarCollapsed} />
+                                <NavLink to="/app/sessions" icon={<Activity />} label="Sessions" collapsed={isSidebarCollapsed} />
                             )}
-                            <NavLink to="/settings" icon={<Settings />} label="Settings" collapsed={isSidebarCollapsed} />
+                            <NavLink to="/app/settings" icon={<Settings />} label="Settings" collapsed={isSidebarCollapsed} />
                         </nav>
+
                     </div>
                 </div>
 
@@ -184,10 +220,11 @@ export default function Layout() {
                                 onFocus={() => setShowSearchResults(searchQuery.length > 0)}
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && searchQuery.trim()) {
-                                        navigate(`/repositories?search=${encodeURIComponent(searchQuery)}`);
+                                        navigate(`/app/repositories?search=${encodeURIComponent(searchQuery)}`);
                                         setShowSearchResults(false);
                                         searchInputRef.current?.blur();
                                     }
+
                                     if (e.key === 'Escape') {
                                         setShowSearchResults(false);
                                         searchInputRef.current?.blur();
@@ -222,7 +259,7 @@ export default function Layout() {
                                                 {filtered.slice(0, 10).map((repo: string) => (
                                                     <Link
                                                         key={repo}
-                                                        to={`/repositories/${repo}`}
+                                                        to={`/app/repositories/${repo}`}
                                                         onClick={() => {
                                                             setShowSearchResults(false);
                                                             setSearchQuery('');
@@ -234,12 +271,13 @@ export default function Layout() {
                                                             {repo}
                                                         </span>
                                                     </Link>
+
                                                 ))}
                                                 {filtered.length > 10 && (
                                                     <div className="px-4 py-3 bg-white/5 border-t border-white/10">
                                                         <button
                                                             onClick={() => {
-                                                                navigate(`/repositories?search=${encodeURIComponent(searchQuery)}`);
+                                                                navigate(`/app/repositories?search=${encodeURIComponent(searchQuery)}`);
                                                                 setShowSearchResults(false);
                                                                 setSearchQuery('');
                                                             }}
@@ -247,6 +285,7 @@ export default function Layout() {
                                                         >
                                                             View all {filtered.length} results →
                                                         </button>
+
                                                     </div>
                                                 )}
                                             </>
@@ -362,7 +401,8 @@ export default function Layout() {
 
                         <div className="h-8 w-[1px] bg-white/5 ml-2" />
 
-                        <Link to="/profile" className="flex items-center gap-3 pl-2 group">
+                        <Link to="/app/profile" className="flex items-center gap-3 pl-2 group">
+
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-gray-800 to-gray-700 p-[1px] group-hover:from-blue-500 group-hover:to-cyan-400 transition-all">
                                 <div className="w-full h-full rounded-xl bg-[#020204] flex items-center justify-center overflow-hidden">
                                     <User size={18} className="text-gray-400 group-hover:text-blue-400 transition-colors" />
@@ -382,9 +422,29 @@ export default function Layout() {
     );
 }
 
-function NavLink({ to, icon, label, collapsed }: { to: string, icon: React.ReactElement, label: string, collapsed: boolean }) {
+function NavLink({ to, icon, label, collapsed, locked }: { to: string, icon: React.ReactElement, label: string, collapsed: boolean, locked?: boolean }) {
     const location = useLocation();
+    const navigate = useNavigate(); // Added useNavigate hook
     const active = location.pathname.startsWith(to);
+
+    if (locked) {
+        return (
+            <div
+                onClick={() => navigate('/app/settings')}
+                className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl text-xs font-bold uppercase tracking-widest transition-all duration-300 relative group overflow-hidden text-gray-700 cursor-not-allowed border border-transparent hover:bg-white/5`}>
+                <div className="transition-transform duration-300">
+                    {React.cloneElement(icon, { size: 20 })}
+                </div>
+
+                {!collapsed && (
+                    <div className="flex-1 flex justify-between items-center">
+                        <span className="truncate">{label}</span>
+                        <Lock size={12} className="text-gray-600" />
+                    </div>
+                )}
+            </div>
+        );
+    }
 
     return (
         <Link
@@ -430,4 +490,3 @@ function HeaderIcon({ icon, count, onClick }: { icon: React.ReactNode, count?: n
         </button>
     );
 }
-

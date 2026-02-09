@@ -12,6 +12,7 @@ import (
 	"github.com/registryx/registryx/backend/pkg/costs"
 	"github.com/registryx/registryx/backend/pkg/intelligence"
 	"github.com/registryx/registryx/backend/pkg/middleware"
+    "github.com/registryx/registryx/backend/pkg/license"
 )
 
 // AdvancedHandler handles advanced feature endpoints
@@ -30,6 +31,10 @@ func NewAdvancedHandler(intel *intelligence.Service, costSvc *costs.Service) *Ad
 
 // GetPrioritizedVulnerabilities returns vulnerabilities sorted by priority
 func (h *AdvancedHandler) GetPrioritizedVulnerabilities(w http.ResponseWriter, r *http.Request) {
+    if !license.HasFeature("scanning") {
+        http.Error(w, "Feature 'Vulnerability Scanning' is not available in your plan.", http.StatusForbidden)
+        return
+    }
 	manifestIDStr := r.URL.Query().Get("manifest_id")
 	if manifestIDStr == "" {
 		http.Error(w, "manifest_id required", http.StatusBadRequest)
@@ -96,6 +101,10 @@ func (h *AdvancedHandler) RefreshEPSS(w http.ResponseWriter, r *http.Request) {
 
 // GetCostDashboard returns the cost dashboard summary
 func (h *AdvancedHandler) GetCostDashboard(w http.ResponseWriter, r *http.Request) {
+    if !license.HasFeature("cost_intel") {
+        http.Error(w, "Feature 'Cost Intelligence' is not available in your plan.", http.StatusPaymentRequired)
+        return
+    }
 	// Extract User & Role
 	role, _ := r.Context().Value(middleware.RoleKey).(string)
 	
@@ -126,6 +135,10 @@ func (h *AdvancedHandler) GetCostDashboard(w http.ResponseWriter, r *http.Reques
 
 // GetZombieImages returns list of zombie images
 func (h *AdvancedHandler) GetZombieImages(w http.ResponseWriter, r *http.Request) {
+    if !license.HasFeature("cost_intel") {
+        http.Error(w, "Feature 'Cost Intelligence' is not available in your plan.", http.StatusPaymentRequired)
+        return
+    }
 	// Extract User & Role
 	role, _ := r.Context().Value(middleware.RoleKey).(string)
 	
@@ -176,6 +189,10 @@ func (h *AdvancedHandler) RefreshCosts(w http.ResponseWriter, r *http.Request) {
 
 // CleanupZombies deletes zombie images
 func (h *AdvancedHandler) CleanupZombies(w http.ResponseWriter, r *http.Request) {
+    if !license.HasFeature("cost_intel") {
+        http.Error(w, "Feature 'Cost Intelligence' is not available in your plan.", http.StatusPaymentRequired)
+        return
+    }
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return

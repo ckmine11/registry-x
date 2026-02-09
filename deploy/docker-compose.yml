@@ -1,10 +1,12 @@
-
+version: '3.8'
 
 services:
-  # --- INFRASTRUCTURE ---
+  # --- INFRASTRUCTURE LAYER ---
+  
   postgres:
     image: postgres:16-alpine
     container_name: registryx-db
+    restart: always  # Auto-restart on crash or reboot
     environment:
       POSTGRES_USER: registryx
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -13,21 +15,43 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # Initialize DB schema automatically
       - ../backend/migrations:/docker-entrypoint-initdb.d
     networks:
       - registryx-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registryx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: &default-logging
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   redis:
     image: redis:7-alpine
     container_name: registryx-redis
+    restart: always
+    command: redis-server --appendonly yes  # Enable data persistence
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     networks:
       - registryx-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
 
   minio:
     image: minio/minio
     container_name: registryx-minio
+    restart: always
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
@@ -39,18 +63,26 @@ services:
       - minio_data:/data
     networks:
       - registryx-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    logging: *default-logging
 
-  # --- APPLICATIONS ---
+  # --- APPLICATION LAYER ---
+
   backend:
     build: ../backend
     container_name: registryx-backend
+    restart: always
     ports:
       - "5000:5000"
     environment:
       SERVER_PORT: ":5000"
-      DATABASE_URL: "postgres://registryx:${POSTGRES_PASSWORD}@postgres:5432/registryx?sslmode=disable"
-      REDIS_ADDR: "redis:6379"
-      MINIO_ENDPOINT: "minio:9000"
+      DATABASE_URL: "postgres://registryx:${POSTGRES_PASSWORD}@registryx-db:5432/registryx?sslmode=disable"
+      REDIS_ADDR: "registryx-redis:6379"
+      MINIO_ENDPOINT: "registryx-minio:9000"
       MINIO_ROOT_USER: "${MINIO_ROOT_USER}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
       S3_BUCKET: "${S3_BUCKET}"
@@ -59,22 +91,36 @@ services:
       JWT_SECRET: "${JWT_SECRET}"
       ENABLE_IMMUTABLE_TAGS: "false"
       ENABLE_COST_INTELLIGENCE: "true"
-      # SMTP Configuration for Email/Forgot Password
-      SMTP_HOST: "smtp.gmail.com"
-      SMTP_PORT: "587"
+      # Cost Intelligence Configuration
+      COST_MODE: "${COST_MODE}"
+      STORAGE_CAPACITY_TB: "${STORAGE_CAPACITY_TB}"
+      STORAGE_COST_PER_GB_MONTH: "${STORAGE_COST_PER_GB_MONTH}"
+      BANDWIDTH_COST_PER_GB: "${BANDWIDTH_COST_PER_GB}"
+      REGISTRYX_LICENSE_KEY: "${REGISTRYX_LICENSE_KEY}"
+      
+      # SMTP Configuration
+      SMTP_HOST: "${SMTP_HOST}"
+      SMTP_PORT: "${SMTP_PORT}"
       SMTP_USER: "${SMTP_USER}"
-      SMTP_PASS: "${SMTP_PASS}" # Reads from .env file
-      SMTP_FROM: "registryx-noreply@example.com"
+      SMTP_PASS: "${SMTP_PASS}"
+      SMTP_FROM: "${SMTP_FROM}"
+    volumes:
+      - trivy_cache:/root/.cache/trivy
     depends_on:
-      - postgres
-      - redis
-      - minio
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     networks:
       - registryx-net
+    logging: *default-logging
 
   frontend:
     build: ../frontend
     container_name: registryx-frontend
+    restart: always
     ports:
       - "5173:80"
     environment:
@@ -83,6 +129,7 @@ services:
       - backend
     networks:
       - registryx-net
+    logging: *default-logging
 
 networks:
   registryx-net:
@@ -91,3 +138,5 @@ networks:
 volumes:
   postgres_data:
   minio_data:
+  trivy_cache:
+  redis_data:

@@ -1,69 +1,72 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: backend
+  name: registryx-backend
   namespace: registryx
 spec:
-  replicas: 2
+  replicas: 1 # Scale this up for high availability
   selector:
     matchLabels:
-      app: backend
+      app: registryx-backend
   template:
     metadata:
       labels:
-        app: backend
+        app: registryx-backend
     spec:
       initContainers:
         - name: wait-for-db
-          image: postgres:15-alpine
+          image: postgres:16-alpine
           command:
             [
               "sh",
               "-c",
-              "until pg_isready -h postgres-svc -U registryx; do echo waiting for db; sleep 2; done;",
+              "until pg_isready -h registryx-db -U registryx; do echo waiting for db; sleep 2; done;",
             ]
-          env:
-            - name: PGPASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: registryx-secrets
-                  key: DB_PASSWORD
       containers:
         - name: backend
-          # You'll need to push your image to a real registry (e.g. dockerhub or GHCR)
-          image: ckmine11/registryx-backend:latest
-          imagePullPolicy: Always
-          envFrom:
-            - configMapRef:
-                name: registryx-config
-            - secretRef:
-                name: registryx-secrets
-          env:
-            - name: MINIO_ACCESS_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: registryx-secrets
-                  key: MINIO_ROOT_USER
-            - name: MINIO_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: registryx-secrets
-                  key: MINIO_ROOT_PASSWORD
+          image: registryx/backend:latest # REPLACE WITH YOUR IMAGE
           ports:
             - containerPort: 5000
-          # Mount docker socket for Trivy? Or assume Trivy is embedded?
-          # Current logic runs 'trivy' binary inside the container.
-          # So we need to ensure the image has 'trivy' installed.
+          envFrom:
+            - configMapRef:
+              name: registryx-config
+            - secretRef:
+              name: registryx-secrets
+          env:
+            # Manually constructing DB URL to interpret secrets
+            - name: DATABASE_URL
+              value: "postgres://registryx:$(POSTGRES_PASSWORD)@registryx-db:5432/registryx?sslmode=disable"
+          volumeMounts:
+            - name: trivy-cache
+              mountPath: /root/.cache/trivy
+      volumes:
+        - name: trivy-cache
+          persistentVolumeClaim:
+            claimName: trivy-pvc
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trivy-pvc
+  namespace: registryx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: backend-svc
+  name: registryx-backend
   namespace: registryx
 spec:
-  type: LoadBalancer # Or ClusterIP if using Ingress
+  type: LoadBalancer # Use ClusterIP if using Ingress
   ports:
-    - port: 80
+    - port: 5000
       targetPort: 5000
   selector:
-    app: backend
+    app: registryx-backend

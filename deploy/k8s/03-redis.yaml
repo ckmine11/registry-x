@@ -1,31 +1,65 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: redis
+  name: registryx-redis
   namespace: registryx
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: redis
+      app: registryx-redis
   template:
     metadata:
       labels:
-        app: redis
+        app: registryx-redis
     spec:
       containers:
         - name: redis
           image: redis:7-alpine
+          command: ["redis-server", "--appendonly", "yes"]
           ports:
             - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-pvc
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: registryx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: redis-svc
+  name: registryx-redis
   namespace: registryx
 spec:
   ports:
     - port: 6379
   selector:
-    app: redis
+    app: registryx-redis

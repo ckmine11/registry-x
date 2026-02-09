@@ -1,0 +1,2 @@
+FROM localhost:5000/demo/alpine:prod-verified
+RUN echo "I am the child" > /child.txt

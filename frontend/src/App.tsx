@@ -4,12 +4,10 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Repositories from './pages/Repositories';
 import RepositoryDetails from './pages/RepositoryDetails';
-import Policies from './pages/Policies';
+import PolicySettings from './pages/PolicySettings';
+import SecurityPolicies from './pages/SecurityPolicies';
 import Settings from './pages/Settings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-
-const queryClient = new QueryClient();
-
 import { AuthProvider, useAuth } from './lib/auth-context';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -19,7 +17,11 @@ import UserProfile from './pages/UserProfile';
 import DependencyGraph from './pages/DependencyGraph';
 import CostIntelligence from './pages/CostIntelligence';
 import Sessions from './pages/Sessions';
+import Landing from './pages/Landing';
+
 import { Loader2 } from 'lucide-react';
+
+const queryClient = new QueryClient();
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     const { token, isLoading } = useAuth();
@@ -45,30 +47,49 @@ function App() {
             <AuthProvider>
                 <BrowserRouter>
                     <Routes>
-                        <Route path="/login" element={<Login />} />
+                        {/* Static Redirects for Legacy Paths */}
+                        <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
+                        <Route path="/repositories" element={<Navigate to="/app/repositories" replace />} />
+                        <Route path="/lineage" element={<Navigate to="/app/lineage" replace />} />
+                        <Route path="/costs" element={<Navigate to="/app/costs" replace />} />
+                        <Route path="/sessions" element={<Navigate to="/app/sessions" replace />} />
+                        <Route path="/policies" element={<Navigate to="/app/policies" replace />} />
+                        <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
+                        <Route path="/profile" element={<Navigate to="/app/profile" replace />} />
+
+                        {/* Auth Routes */}
                         <Route path="/login" element={<Login />} />
                         <Route path="/register" element={<Register />} />
                         <Route path="/forgot-password" element={<ForgotPassword />} />
                         <Route path="/reset-password" element={<ResetPassword />} />
 
-                        <Route path="/" element={
+                        {/* Public Marketing Routes */}
+                        <Route path="/" element={<Landing />} />
+
+
+                        {/* Protected App Workspace */}
+                        <Route path="/app" element={
                             <ProtectedRoute>
                                 <Layout />
                             </ProtectedRoute>
                         }>
-                            <Route index element={<Navigate to="/dashboard" replace />} />
+                            <Route index element={<Navigate to="/app/dashboard" replace />} />
                             <Route path="dashboard" element={<Dashboard />} />
                             <Route path="repositories" element={<Repositories />} />
                             <Route path="repositories/:name" element={<RepositoryDetails />} />
                             <Route path="lineage" element={<DependencyGraph />} />
                             <Route path="costs" element={<CostIntelligence />} />
                             <Route path="sessions" element={<Sessions />} />
-                            <Route path="policies" element={<Policies />} />
+                            <Route path="policies" element={<SecurityPolicies />} />
                             <Route path="settings" element={<Settings />} />
                             <Route path="profile" element={<UserProfile />} />
 
-                            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                            {/* Inner Catch-all */}
+                            <Route path="*" element={<Navigate to="/app/dashboard" replace />} />
                         </Route>
+
+                        {/* Global Catch-all */}
+                        <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </BrowserRouter>
             </AuthProvider>

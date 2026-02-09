@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -27,11 +30,19 @@ import (
 	"github.com/registryx/registryx/backend/pkg/scanner"
 	"github.com/registryx/registryx/backend/pkg/storage"
 	"github.com/registryx/registryx/backend/pkg/webhook"
+	"github.com/registryx/registryx/backend/pkg/license"
 )
 
 func main() {
 	cfg := config.Load()
-	fmt.Printf("Starting RegistryX Backend (VERSION 2.2 - HEALTH ALGO UPDATE) on %s...\n", cfg.ServerPort)
+	
+	// Initialize License System (Early ENV check)
+	if err := license.Init(); err != nil {
+		log.Printf("License Init Warning: %v", err)
+	}
+
+
+	fmt.Printf("Starting RegistryX Backend (VERSION 2.5) on %s...\n", cfg.ServerPort)
 
 	// Initialize Storage
 	store, err := storage.NewS3Driver(cfg)
@@ -53,14 +64,25 @@ func main() {
 		log.Fatalf("Failed to connect to database after retries: %v", err)
 	}
 
+	// Dynamic License Check (DB Fallback)
+	license.SetDB(dbConn)
+	if err := license.LoadFromDB(); err != nil {
+		log.Printf("License DB Load Warning: %v", err)
+	}
+
+
 	// Initialize Metadata Service
 	metaService := metadata.NewService(dbConn)
 
-	// Initialize Scanner Service
-	scanService := scanner.NewService(dbConn, cfg)
+	// Initialize Webhook Service (Notifications)
+	webhookService := webhook.NewService(dbConn)
+
+
+	// Initialize Scanner Service (with webhook support)
+	scanService := scanner.NewService(dbConn, cfg, webhookService)
 
 	// Initialize Policy Service
-	policyService := policy.NewService()
+	policyService := policy.NewService(dbConn)
 
 	queueService, err := queue.NewService(cfg)
 	if err != nil {
@@ -115,7 +137,7 @@ func main() {
 	}
 
 	// 8. Webhook Service
-	webhookService := webhook.NewService(cfg.WebhookURL)
+	webhookService = webhook.NewService(dbConn)
 
 	// 9. Email Service
 	emailService := email.NewService(cfg)
@@ -128,13 +150,15 @@ func main() {
 	if queueService != nil {
 		redisClient = queueService.Client
 	}
-	authService := auth.NewService(dbConn, emailService, auditService, redisClient, cfg.JWTSecret)
+	authService := auth.NewService(dbConn, emailService, auditService, redisClient, cfg.JWTSecret, cfg)
 
 
 	costConfig := &costs.CostConfig{
 		StorageCostPerGBMonth: cfg.StorageCostPerGBMonth, 
 		BandwidthCostPerGB:    cfg.BandwidthCostPerGB, 
 		RegistryRegion:        "custom",
+		CostMode:              cfg.CostMode,
+		StorageCapacityTB:     cfg.StorageCapacityTB,
 	}
 	costService := costs.NewService(dbConn, costConfig)
 
@@ -142,16 +166,17 @@ func main() {
 	regHandler := registry.NewHandler(cfg, store, metaService, scanService, policyService, queueService, webhookService, auditService)
 	
 	// Initialize Dashboard Handler
-	dashHandler := api.NewDashboardHandler(metaService, scanService, policyService, authService, store, cfg, auditService)
+	dashHandler := api.NewDashboardHandler(metaService, scanService, policyService, authService, store, cfg, auditService, webhookService)
 
 	// Initialize Advanced Features Handler
 	advancedHandler := api.NewAdvancedHandler(intelService, costService)
+
 
 	// Router Setup (Gorilla Mux)
 	r := mux.NewRouter()
 
 	// Middleware
-	authMiddleware := middleware.AuthMiddleware(cfg.JWTSecret, redisClient)
+	authMiddleware := middleware.AuthMiddleware(cfg.JWTSecret, redisClient, cfg.BackendURL)
 
 	// Dashboard API Group
 	apiV1 := r.PathPrefix("/api/v1").Subrouter()
@@ -181,12 +206,31 @@ func main() {
 	apiV1.HandleFunc("/health-check", dashHandler.HealthCheck).Methods("GET") // Added health-check
 	apiV1.HandleFunc("/policy", dashHandler.GetPolicy).Methods("GET")
 	apiV1.HandleFunc("/policy", dashHandler.UpdatePolicy).Methods("PUT")
+	apiV1.Handle("/system/security/policy", authMiddleware(http.HandlerFunc(dashHandler.GetSecurityPolicy))).Methods("GET")
+	apiV1.Handle("/system/security/policy", authMiddleware(http.HandlerFunc(dashHandler.UpdateSecurityPolicy))).Methods("PUT")
+	
+	apiV1.Handle("/system/security/policy/overrides", authMiddleware(http.HandlerFunc(dashHandler.ListRepositorySecurityPolicies))).Methods("GET")
+	apiV1.Handle("/system/security/policy/overrides", authMiddleware(http.HandlerFunc(dashHandler.UpdateRepositorySecurityPolicy))).Methods("POST")
+	apiV1.Handle("/system/security/policy/overrides/{repository:.+}", authMiddleware(http.HandlerFunc(dashHandler.DeleteRepositorySecurityPolicy))).Methods("DELETE")
 	
 	apiV1.Handle("/repositories", authMiddleware(http.HandlerFunc(dashHandler.CreateRepository))).Methods("POST")
 	
 	// System / Admin
 	apiV1.HandleFunc("/system/config", dashHandler.GetSystemConfig).Methods("GET") // Expose config
+	apiV1.Handle("/system/license", authMiddleware(http.HandlerFunc(dashHandler.UpdateLicense))).Methods("POST")
 	apiV1.Handle("/system/gc", authMiddleware(http.HandlerFunc(dashHandler.GarbageCollect))).Methods("POST")
+
+	// Webhooks
+	apiV1.Handle("/system/webhooks", authMiddleware(http.HandlerFunc(dashHandler.ListWebhooks))).Methods("GET")
+	apiV1.Handle("/system/webhooks", authMiddleware(http.HandlerFunc(dashHandler.CreateWebhook))).Methods("POST")
+	apiV1.Handle("/system/webhooks/{id}", authMiddleware(http.HandlerFunc(dashHandler.DeleteWebhook))).Methods("DELETE")
+	apiV1.Handle("/system/webhooks/{id}/test", authMiddleware(http.HandlerFunc(dashHandler.TestWebhook))).Methods("POST")
+
+	// User Management (Admin)
+	apiV1.Handle("/users", authMiddleware(http.HandlerFunc(dashHandler.ListUsers))).Methods("GET")
+	apiV1.Handle("/users", authMiddleware(http.HandlerFunc(dashHandler.InviteUser))).Methods("POST")
+	apiV1.Handle("/users/{id}", authMiddleware(http.HandlerFunc(dashHandler.DeleteUser))).Methods("DELETE")
+	apiV1.Handle("/users/{id}/role", authMiddleware(http.HandlerFunc(dashHandler.UpdateUserRole))).Methods("PUT")
 	
 	// Specific routes must come BEFORE greedy routes matches
 	// Specific routes must come BEFORE greedy routes matches
@@ -224,6 +268,9 @@ func main() {
 	apiV1.HandleFunc("/vulnerabilities/prioritized", advancedHandler.GetPrioritizedVulnerabilities).Methods("GET")
 	apiV1.HandleFunc("/vulnerabilities/intelligence/{cve}", advancedHandler.GetVulnIntelligence).Methods("GET")
 	apiV1.HandleFunc("/vulnerabilities/refresh-epss", advancedHandler.RefreshEPSS).Methods("POST")
+	
+
+
 	apiV1.Handle("/costs/dashboard", authMiddleware(http.HandlerFunc(advancedHandler.GetCostDashboard))).Methods("GET")
 	apiV1.Handle("/costs/zombie-images", authMiddleware(http.HandlerFunc(advancedHandler.GetZombieImages))).Methods("GET")
 	apiV1.Handle("/costs/refresh", authMiddleware(http.HandlerFunc(advancedHandler.RefreshCosts))).Methods("POST")
@@ -276,8 +323,19 @@ func main() {
 			// CORS Headers (Production Tighter)
 			origin := r.Header.Get("Origin")
 			if origin != "" {
-				w.Header().Set("Access-Control-Allow-Origin", origin)
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				// Check against allowed origins
+				allowed := false
+				for _, o := range strings.Split(cfg.CORSAllowedOrigins, ",") {
+					if strings.TrimSpace(o) == "*" || strings.TrimSpace(o) == origin {
+						allowed = true
+						break
+					}
+				}
+
+				if allowed {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+				}
 			}
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Docker-Upload-UUID, X-Requested-With")
@@ -292,6 +350,38 @@ func main() {
 		})
 	}
 
-	// Start Server with Global Middleware
-	log.Fatal(http.ListenAndServe(cfg.ServerPort, globalMiddleware(r)))
+	// Start Server with Graceful Shutdown
+	srv := &http.Server{
+		Addr:    cfg.ServerPort,
+		Handler: globalMiddleware(r),
+	}
+
+	// Run server in a goroutine so that it doesn't block
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("listen: %s\n", err)
+		}
+	}()
+
+	log.Println("Server Started")
+
+	// Wait for interrupt signal to gracefully shutdown the server with
+	// a timeout of 30 seconds.
+	quit := make(chan os.Signal, 1)
+	// kill (no param) default send syscall.SIGTERM
+	// kill -2 is syscall.SIGINT
+	// kill -9 is syscall.SIGKILL but can't be caught, so don't need to add it
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Shutting down server...")
+
+	// The context is used to inform the server it has 30 seconds to finish
+	// the request it is currently handling
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatal("Server forced to shutdown:", err)
+	}
+
+	log.Println("Server exiting")
 }

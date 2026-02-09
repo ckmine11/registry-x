@@ -110,7 +110,7 @@ const Repositories = () => {
                                 {filteredRepos.slice(0, 10).map((repo: string) => (
                                     <Link
                                         key={repo}
-                                        to={`/repositories/${repo}`}
+                                        to={`/app/repositories/${repo}`}
                                         onClick={() => {
                                             setShowSearchDropdown(false);
                                             setSearchTerm('');
@@ -328,7 +328,7 @@ const RepositoryComponent = ({ name, onCopy, viewMode, onRequestDelete }: { name
     if (viewMode === 'list') {
         return (
             <div className="cyber-card p-6 flex items-center justify-between group hover:border-blue-500/30 transition-all cursor-pointer">
-                <Link to={`/repositories/${encodeURIComponent(name)}`} className="flex flex-1 items-center gap-6">
+                <Link to={`/app/repositories/${encodeURIComponent(name)}`} className="flex flex-1 items-center gap-6">
                     <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
                         <Box size={24} />
                     </div>
@@ -358,7 +358,7 @@ const RepositoryComponent = ({ name, onCopy, viewMode, onRequestDelete }: { name
                     >
                         <Trash2 size={16} />
                     </button>
-                    <Link to={`/repositories/${encodeURIComponent(name)}`} className="p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20">
+                    <Link to={`/app/repositories/${encodeURIComponent(name)}`} className="p-3 rounded-xl bg-blue-600 text-white hover:bg-blue-500 transition-all shadow-lg shadow-blue-500/20">
                         <ArrowRight size={16} />
                     </Link>
                 </div>
@@ -370,7 +370,7 @@ const RepositoryComponent = ({ name, onCopy, viewMode, onRequestDelete }: { name
         <div className="cyber-card p-8 group flex flex-col relative overflow-hidden h-full">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 blur-3xl pointer-events-none group-hover:bg-blue-600/10 transition-colors" />
 
-            <Link to={`/repositories/${encodeURIComponent(name)}`} className="flex-1">
+            <Link to={`/app/repositories/${encodeURIComponent(name)}`} className="flex-1">
                 <div className="flex items-start justify-between mb-6">
                     <div className="w-14 h-14 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-center text-blue-400 group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all">
                         <Box size={28} />
@@ -407,7 +407,7 @@ const RepositoryComponent = ({ name, onCopy, viewMode, onRequestDelete }: { name
                     </button>
                 </div>
                 <Link
-                    to={`/repositories/${encodeURIComponent(name)}`}
+                    to={`/app/repositories/${encodeURIComponent(name)}`}
                     className="flex items-center justify-center gap-2 py-3.5 bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition-all text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/10 group-hover:shadow-blue-500/20 active:scale-95"
                 >
                     View Repository Details

@@ -5,34 +5,50 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/registryx/registryx/backend/pkg/config"
+	"github.com/registryx/registryx/backend/pkg/webhook"
+	"github.com/registryx/registryx/backend/pkg/reports"
+
 )
 
 type Service struct {
-	DB     *sql.DB
-	Config *config.Config
+	DB      *sql.DB
+	Config  *config.Config
+	Webhook *webhook.Service
+	mu      sync.Mutex // Serialize trivy scans to avoid cache locks
 }
 
-func NewService(db *sql.DB, cfg *config.Config) *Service {
+func NewService(db *sql.DB, cfg *config.Config, webhookSvc *webhook.Service) *Service {
 	return &Service{
-		DB:     db,
-		Config: cfg,
+		DB:      db,
+		Config:  cfg,
+		Webhook: webhookSvc,
+
 	}
 }
 
 // ScanManifest triggers a Trivy scan for the given manifest.
 // For MVP, this runs 'trivy' as a subprocess.
 // In prod, this would likely enqueue a job to a worker pool.
-// ScanManifest triggers a Trivy scan for the given manifest.
-// For MVP, this runs 'trivy' as a subprocess.
-// In prod, this would likely enqueue a job to a worker pool.
 func (s *Service) ScanManifest(ctx context.Context, manifestID uuid.UUID, repoName, reference string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	fmt.Printf("Scanning manifest %s (repo: %s, ref: %s)...\n", manifestID, repoName, reference)
+
+	// Clear any stale locks (especially if a previous scan was killed)
+	lockFile := "/root/.cache/trivy/fscache.lock"
+	if _, err := os.Stat(lockFile); err == nil {
+		fmt.Printf("[Scanner] Removing stale lock file: %s\n", lockFile)
+		_ = os.Remove(lockFile)
+	}
 
 	// Update status to 'scanning'
 	s.updateStatus(ctx, manifestID, "scanning")
@@ -78,6 +94,41 @@ func (s *Service) ScanManifest(ctx context.Context, manifestID uuid.UUID, repoNa
 		fmt.Printf("Save report failed: %v\n", err)
 	} else {
 		fmt.Printf("Scan completed for %s\n", reference)
+
+
+		
+		// Trigger webhook notifications for scan completion
+		if s.Webhook != nil {
+			// Notify webhooks asynchronously with PDF generation
+			go func() {
+				// Wait a moment for health score to be calculated
+				time.Sleep(2 * time.Second)
+				
+				event := webhook.Event{
+					Type:       webhook.EventScanCompleted,
+					Action:     "SCAN_COMPLETED",
+					Repository: repoName,
+					Tag:        reference,
+					Timestamp:  time.Now(),
+					User:       "system",
+				}
+				
+				// Generate PDF report
+				pdfData, pdfFilename, err := reports.GenerateScanReportPDF(s.DB, manifestID, repoName, reference)
+				if err != nil {
+					fmt.Printf("[PDF] Failed to generate PDF report: %v\n", err)
+				} else {
+					event.PDFReport = pdfData
+					event.PDFFilename = pdfFilename
+					fmt.Printf("[PDF] Generated report: %s (%d bytes)\n", pdfFilename, len(pdfData))
+				}
+				
+				// Send notifications
+				if err := s.Webhook.Notify(context.Background(), event); err != nil {
+					fmt.Printf("[Webhook] Failed to send notifications: %v\n", err)
+				}
+			}()
+		}
 	}
 }
 
@@ -133,7 +184,10 @@ type ScanSummary struct {
 type TrivyReport struct {
 	Results []struct {
 		Vulnerabilities []struct {
-			Severity string `json:"Severity"`
+			PkgName          string `json:"PkgName"`
+			InstalledVersion string `json:"InstalledVersion"`
+			FixedVersion     string `json:"FixedVersion"`
+			Severity         string `json:"Severity"`
 		} `json:"Vulnerabilities"`
 	} `json:"Results"`
 }
@@ -224,10 +278,11 @@ func (s *Service) GetScanStatus(ctx context.Context, manifestID uuid.UUID) (*Sca
 	}
 	
 	if status.Status == "scanning" && scannedAt.Valid {
-		// If it's been scanning for more than 5 minutes, consider it failed/stuck
-		if time.Since(scannedAt.Time) > 5*time.Minute {
+		// If it's been scanning for more than 30 minutes, consider it failed/stuck
+		// Initial DB download can take a long time on slow connections
+		if time.Since(scannedAt.Time) > 30*time.Minute {
 			status.Status = "failed"
-			status.Error = "Scan timed out (started > 5m ago)"
+			status.Error = "Scan timed out (started > 30m ago)"
 		}
 	}
 

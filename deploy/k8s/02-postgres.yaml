@@ -1,59 +1,74 @@
 apiVersion: apps/v1
-kind: StatefulSet
+kind: Deployment
 metadata:
-  name: postgres
+  name: registryx-db
   namespace: registryx
 spec:
-  serviceName: "postgres-svc"
   replicas: 1
   selector:
     matchLabels:
-      app: postgres
+      app: registryx-db
   template:
     metadata:
       labels:
-        app: postgres
+        app: registryx-db
     spec:
       containers:
         - name: postgres
-          image: postgres:15-alpine
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
           env:
             - name: POSTGRES_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: registryx-config
-                  key: DB_USER
+              value: "registryx"
+            - name: POSTGRES_DB
+              value: "registryx"
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: registryx-secrets
-                  key: DB_PASSWORD
-            - name: POSTGRES_DB
-              valueFrom:
-                configMapKeyRef:
-                  name: registryx-config
-                  key: DB_NAME
-          ports:
-            - containerPort: 5432
+                  key: POSTGRES_PASSWORD
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
-  volumeClaimTemplates:
-    - metadata:
-        name: postgres-data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 10Gi
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "registryx"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: registryx
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres-svc
+  name: registryx-db
   namespace: registryx
 spec:
   ports:
     - port: 5432
   selector:
-    app: postgres
+    app: registryx-db

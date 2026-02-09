@@ -20,7 +20,7 @@ const Login = () => {
         try {
             const res = await api.login(username, password);
             login(res.data.token, res.data.user);
-            navigate('/');
+            navigate('/app');
         } catch (err: any) {
             setError(err.response?.data?.message || 'Login failed');
         } finally {

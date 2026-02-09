@@ -17,6 +17,20 @@ axiosInstance.interceptors.request.use((config) => {
 });
 
 // ... existing interfaces ...
+export interface SecurityPolicyConfig {
+    critical_threshold: number;
+    high_threshold: number;
+    medium_threshold: number;
+    low_threshold: number;
+    block_unscanned: boolean;
+}
+
+export interface RepositoryOverride {
+    id: string;
+    repository_path: string;
+    config: SecurityPolicyConfig;
+    updated_at: string;
+}
 
 export interface VulnerabilitySummary {
     critical: number;
@@ -44,6 +58,8 @@ export interface ManifestDetails {
     vulnerabilities?: VulnerabilitySummary;
     isSigned?: boolean;
     healthScore?: HealthScore;
+    createdAt?: string;
+    pullCount?: number;
 }
 
 export interface ScanStatus {
@@ -146,6 +162,7 @@ const customApi = {
         return axiosInstance.get<ManifestDetails>(`/api/v1/repositories/${encodeURIComponent(repo)}/manifests/${reference}`);
     },
 
+    // --- Policy ---
     getPolicy: async () => {
         // Real Endpoint: /api/v1/policy
         return axiosInstance.get<{ rego: string }>('/api/v1/policy');
@@ -153,8 +170,28 @@ const customApi = {
 
     updatePolicy: async (rego: string) => {
         // Real Endpoint: /api/v1/policy (PUT)
-        // Send raw string or JSON? Handler reads Body as string.
+        // Send raw string because the backend handler reads request body as bytes/string.
         return axiosInstance.put('/api/v1/policy', rego, { headers: { 'Content-Type': 'text/plain' } });
+    },
+
+    getSecurityPolicy: async () => {
+        return axiosInstance.get<SecurityPolicyConfig>('/api/v1/system/security/policy');
+    },
+
+    updateSecurityPolicy: async (config: SecurityPolicyConfig) => {
+        return axiosInstance.put('/api/v1/system/security/policy', config);
+    },
+
+    listRepositoryOverrides: async () => {
+        return axiosInstance.get<RepositoryOverride[]>('/api/v1/system/security/policy/overrides');
+    },
+
+    updateRepositoryOverride: async (repository: string, config: SecurityPolicyConfig) => {
+        return axiosInstance.post('/api/v1/system/security/policy/overrides', { repository, config });
+    },
+
+    deleteRepositoryOverride: async (repository: string) => {
+        return axiosInstance.delete(`/api/v1/system/security/policy/overrides/${encodeURIComponent(repository)}`);
     },
 
     // Service Accounts
@@ -233,9 +270,16 @@ const customApi = {
         return axiosInstance.post<{ message: string, status: string }>(`/api/v1/repositories/${encodeURIComponent(repo)}/manifests/${reference}/scan/trigger`);
     },
 
+
+
     // Config
     getSystemConfig: async () => {
-        return axiosInstance.get<{ enableCostIntelligence: boolean }>('/api/v1/system/config');
+        return axiosInstance.get<{
+            enableCostIntelligence: boolean;
+            license_plan: string;
+            license_expiry?: string;
+            features: string[];
+        }>('/api/v1/system/config');
     },
 
     // Sessions (Admin)
@@ -244,7 +288,34 @@ const customApi = {
     },
     revokeSession: async (id: string) => {
         return axiosInstance.delete(`/api/v1/system/sessions/${id}`);
-    }
+    },
+    // Webhooks
+    listWebhooks: async () => {
+        return axiosInstance.get<{ data: any[] }>('/api/v1/system/webhooks');
+    },
+    createWebhook: async (url: string, type: string, events: string[]) => {
+        return axiosInstance.post('/api/v1/system/webhooks', { url, type, events });
+    },
+    deleteWebhook: async (id: string) => {
+        return axiosInstance.delete(`/api/v1/system/webhooks/${id}`);
+    },
+    testWebhook: async (id: string) => {
+        return axiosInstance.post(`/api/v1/system/webhooks/${id}/test`);
+    },
+
+    // User Management (RBAC)
+    listUsers: async () => {
+        return axiosInstance.get<{ data: any[] }>('/api/v1/users');
+    },
+    inviteUser: async (email: string, role: string) => {
+        return axiosInstance.post('/api/v1/users', { email, role });
+    },
+    deleteUser: async (id: string) => {
+        return axiosInstance.delete(`/api/v1/users/${id}`);
+    },
+    updateUserRole: async (id: string, role: string) => {
+        return axiosInstance.put(`/api/v1/users/${id}/role`, { role });
+    },
 };
 
 export const api = customApi;

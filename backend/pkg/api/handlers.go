@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -19,6 +19,9 @@ import (
 	"github.com/registryx/registryx/backend/pkg/config"
 	"github.com/registryx/registryx/backend/pkg/storage"
 	"github.com/registryx/registryx/backend/pkg/middleware"
+	"github.com/registryx/registryx/backend/pkg/webhook"
+    "github.com/registryx/registryx/backend/pkg/license"
+    "time"
 )
 
 func (h *DashboardHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -252,9 +255,10 @@ type DashboardHandler struct {
 	Storage  storage.Driver
 	Config   *config.Config
 	Audit    *audit.Service
+	Webhook  *webhook.Service
 }
 
-func NewDashboardHandler(meta *metadata.Service, scan *scanner.Service, pol *policy.Service, auth *auth.Service, store storage.Driver, cfg *config.Config, aud *audit.Service) *DashboardHandler {
+func NewDashboardHandler(meta *metadata.Service, scan *scanner.Service, pol *policy.Service, auth *auth.Service, store storage.Driver, cfg *config.Config, aud *audit.Service, hook *webhook.Service) *DashboardHandler {
 	return &DashboardHandler{
 		Metadata: meta,
 		Scanner:  scan,
@@ -263,6 +267,7 @@ func NewDashboardHandler(meta *metadata.Service, scan *scanner.Service, pol *pol
 		Storage:  store,
 		Config:   cfg,
 		Audit:    aud,
+		Webhook:  hook,
 	}
 }
 
@@ -395,19 +400,91 @@ func (h *DashboardHandler) RevokeServiceAccount(w http.ResponseWriter, r *http.R
 }
 
 // GetSystemConfig GET /api/v1/system/config
+// Returns the license status and enabled features for the Frontend UI.
 func (h *DashboardHandler) GetSystemConfig(w http.ResponseWriter, r *http.Request) {
-	// Security: Block anonymous
-	user := r.Context().Value(middleware.UserKey)
-	if user == nil || user == "anonymous" {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-	resp := map[string]interface{}{
-		"enableCostIntelligence": h.Config.EnableCostIntelligence,
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+    // 1. Check Authentication (Optional: Some initial config might be public, but let's keep it safe)
+    // user := r.Context().Value(middleware.UserKey)
+
+    // 2. Load Current License Info
+    var planName string
+    var expiry *string
+    var allowedFeatures []string
+
+    if license.CurrentLicense != nil {
+        planName = license.CurrentLicense.Plan
+        allowedFeatures = license.CurrentLicense.Features
+
+        // Enterprise plan implicitly includes all premium features
+        if strings.ToUpper(planName) == "ENTERPRISE" {
+            allowedFeatures = []string{"scanning", "cost_intel", "policy_engine", "webhooks", "rbac", "multi_arch"}
+        }
+
+        // Expiry
+        if !license.CurrentLicense.ExpiresAt.IsZero() {
+            exp := license.CurrentLicense.ExpiresAt.Time.Format(time.RFC3339)
+            expiry = &exp
+        }
+    } else {
+        planName = "Community Edition"
+        allowedFeatures = []string{} // No premium features
+    }
+
+    resp := map[string]interface{}{
+        "version":                "2.5.0",
+        "license_plan":           planName,
+        "license_expiry":         expiry,
+        "features":               allowedFeatures, // The UI will check this array to show/hide locks 🔒
+        "enableCostIntelligence": h.Config.EnableCostIntelligence, // Legacy flag
+    }
+
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(resp)
 }
+
+// UpdateLicense POST /api/v1/system/license
+// Updates the system license key, persists it to DB, and reloads features.
+func (h *DashboardHandler) UpdateLicense(w http.ResponseWriter, r *http.Request) {
+    // 1. Admin Check
+    role := r.Context().Value(middleware.RoleKey)
+    if role != "admin" {
+        http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+        return
+    }
+
+    var req struct {
+        LicenseKey string `json:"licenseKey"`
+    }
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        http.Error(w, "Invalid request body", http.StatusBadRequest)
+        return
+    }
+
+    if req.LicenseKey == "" {
+        http.Error(w, "License key required", http.StatusBadRequest)
+        return
+    }
+
+    // 2. Save and Verify
+    if err := license.SaveToDB(req.LicenseKey); err != nil {
+        http.Error(w, fmt.Sprintf("Failed to update license: %v", err), http.StatusBadRequest)
+        return
+    }
+
+    // 3. Audit Log
+    var userID uuid.UUID
+    if uidRaw := r.Context().Value(middleware.UserKey); uidRaw != nil {
+        if uid, err := uuid.Parse(fmt.Sprintf("%v", uidRaw)); err == nil {
+            userID = uid
+        }
+    }
+    h.Audit.Log(r.Context(), userID, "license_updated", nil, map[string]interface{}{
+        "new_plan": license.CurrentLicense.Plan,
+    })
+
+    w.WriteHeader(http.StatusOK)
+    json.NewEncoder(w).Encode(map[string]string{"status": "success", "plan": license.CurrentLicense.Plan})
+}
+
 
 // ManifestDetailsResponse is the enriched data structure for the UI
 type ManifestDetailsResponse struct {
@@ -417,6 +494,8 @@ type ManifestDetailsResponse struct {
 	Vulnerabilities *scanner.ScanSummary    `json:"vulnerabilities"`
 	IsSigned        bool                    `json:"isSigned"`
 	HealthScore     *health.HealthScore     `json:"healthScore,omitempty"`
+    CreatedAt       time.Time               `json:"createdAt"`
+    PullCount       int                     `json:"pullCount"`
 }
 
 // GetManifestDetails returns enriched manifest info (vulns, signatures).
@@ -434,7 +513,7 @@ func (h *DashboardHandler) GetManifestDetails(w http.ResponseWriter, r *http.Req
 	}
 
 	// 2. Get Basic Details (Digest from DB)
-	digest, size, mediaType, err := h.Metadata.GetManifestDetails(r.Context(), manifestID)
+	digest, size, mediaType, createdAt, pullCount, err := h.Metadata.GetManifestDetails(r.Context(), manifestID)
 	if err != nil {
 		http.Error(w, "Internal error getting manifest details", http.StatusInternalServerError)
 		return
@@ -476,6 +555,8 @@ func (h *DashboardHandler) GetManifestDetails(w http.ResponseWriter, r *http.Req
 		Vulnerabilities: summary,
 		IsSigned:        isSigned,
 		HealthScore:     healthScore,
+        CreatedAt:       createdAt,
+        PullCount:       pullCount,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -597,16 +678,146 @@ func (h *DashboardHandler) GetPolicy(w http.ResponseWriter, r *http.Request) {
 // UpdatePolicy updates the policy.
 // PUT /api/v1/policy
 func (h *DashboardHandler) UpdatePolicy(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, "Read failed", http.StatusBadRequest)
+	w.WriteHeader(http.StatusOK)
+}
+
+// GetSecurityPolicy returns the current structural security policy configuration.
+// GET /api/v1/system/security/policy
+func (h *DashboardHandler) GetSecurityPolicy(w http.ResponseWriter, r *http.Request) {
+	// Security: Block anonymous
+	user := r.Context().Value(middleware.UserKey)
+	if user == nil || user == "anonymous" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	policyStr := string(body)
 
-	// Validate & Update
-	if err := h.Policy.UpdatePolicy(policyStr); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	if err := h.Policy.Load(r.Context()); err != nil {
+		log.Printf("[Policy] GetSecurityPolicy: Load failed: %v", err)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(h.Policy.Config)
+}
+
+// UpdateSecurityPolicy updates the structural security policy configuration.
+// PUT /api/v1/system/security/policy
+func (h *DashboardHandler) UpdateSecurityPolicy(w http.ResponseWriter, r *http.Request) {
+    // License Check
+    if !license.HasFeature("policy_engine") {
+        http.Error(w, "Feature 'Security Policy Enforcement' is available in ENTERPRISE plan only.", http.StatusForbidden)
+        return
+    }
+
+	// Security: Admin Only
+	role := r.Context().Value(middleware.RoleKey)
+	if role != "admin" {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		return
+	}
+
+	var conf policy.SecurityPolicyConfig
+	if err := json.NewDecoder(r.Body).Decode(&conf); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Update DB
+	_, err := h.Policy.DB.ExecContext(r.Context(), `
+		UPDATE security_policies 
+		SET critical_threshold = $1, high_threshold = $2, medium_threshold = $3, low_threshold = $4, block_unscanned = $5, updated_at = $6`,
+		conf.CriticalThreshold, conf.HighThreshold, conf.MediumThreshold, conf.LowThreshold, conf.BlockUnscanned, time.Now())
+	
+	if err != nil {
+		http.Error(w, "Failed to save policy: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Reload Service
+	if err := h.Policy.Load(r.Context()); err != nil {
+		fmt.Printf("[API] Failed to reload policy service: %v\n", err)
+	}
+
+	// Audit Log
+	var userID uuid.UUID
+	if uidRaw := r.Context().Value(middleware.UserKey); uidRaw != nil {
+		if uid, err := uuid.Parse(fmt.Sprintf("%v", uidRaw)); err == nil {
+			userID = uid
+		}
+	}
+	h.Audit.Log(r.Context(), userID, "security_policy_updated", nil, map[string]interface{}{
+		"message": "Security thresholds updated.",
+	})
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// ListRepositorySecurityPolicies returns all repository-specific overrides.
+func (h *DashboardHandler) ListRepositorySecurityPolicies(w http.ResponseWriter, r *http.Request) {
+	overrides, err := h.Policy.ListRepositoryPolicies(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(overrides)
+}
+
+// UpdateRepositorySecurityPolicy sets or updates an override for a repository.
+func (h *DashboardHandler) UpdateRepositorySecurityPolicy(w http.ResponseWriter, r *http.Request) {
+    // License Check
+    if !license.HasFeature("policy_engine") {
+        http.Error(w, "Feature 'Repository Policy Overrides' is available in ENTERPRISE plan only.", http.StatusForbidden)
+        return
+    }
+
+	// Security: Admin Only
+	role := r.Context().Value(middleware.RoleKey)
+	if role != "admin" {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		return
+	}
+
+	var req struct {
+		Repository string                      `json:"repository"`
+		Config     policy.SecurityPolicyConfig `json:"config"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Repository == "" {
+		http.Error(w, "Repository path required", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Policy.UpdateRepositoryPolicy(r.Context(), req.Repository, req.Config); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
+}
+
+// DeleteRepositorySecurityPolicy removes an override for a repository.
+func (h *DashboardHandler) DeleteRepositorySecurityPolicy(w http.ResponseWriter, r *http.Request) {
+	// Security: Admin Only
+	role := r.Context().Value(middleware.RoleKey)
+	if role != "admin" {
+		http.Error(w, "Forbidden: Admin access required", http.StatusForbidden)
+		return
+	}
+
+	path := mux.Vars(r)["repository"]
+	if path == "" {
+		// Fallback to query param
+		path = r.URL.Query().Get("repository")
+	}
+
+	if err := h.Policy.DeleteRepositoryPolicy(r.Context(), path); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -760,6 +971,11 @@ func (h *DashboardHandler) GetScanHistory(w http.ResponseWriter, r *http.Request
 // TriggerManualScan triggers a manual vulnerability scan for a manifest
 // POST /api/v1/repositories/{name}/manifests/{reference}/scan/trigger
 func (h *DashboardHandler) TriggerManualScan(w http.ResponseWriter, r *http.Request) {
+    // License Check
+    if !license.HasFeature("scanning") {
+        http.Error(w, "Feature 'Vulnerability Scanning' is not available in your plan.", http.StatusForbidden)
+        return
+    }
 	vars := mux.Vars(r)
 	repoName := vars["name"]
 	reference := vars["reference"]

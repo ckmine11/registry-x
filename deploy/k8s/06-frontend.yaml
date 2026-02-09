@@ -1,35 +1,43 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: frontend
+  name: registryx-frontend
   namespace: registryx
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
-      app: frontend
+      app: registryx-frontend
   template:
     metadata:
       labels:
-        app: frontend
+        app: registryx-frontend
     spec:
       containers:
         - name: frontend
-          # You need to push this image too
-          image: ckmine11/registryx-frontend:latest
-          imagePullPolicy: Always
+          image: registryx/frontend:latest # REPLACE WITH YOUR IMAGE
           ports:
             - containerPort: 80
+          env:
+            - name: VITE_API_URL
+              value: "http://registryx-backend:5000" # Internal Cluster DNS or Public LoadBalancer IP
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: frontend-svc
+  name: registryx-frontend
   namespace: registryx
 spec:
-  type: LoadBalancer
+  type: LoadBalancer # Use ClusterIP if using Ingress
   ports:
     - port: 80
       targetPort: 80
   selector:
-    app: frontend
+    app: registryx-frontend

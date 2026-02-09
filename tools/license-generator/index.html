@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RegistryX License Generator</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .card {
+            background: #1e293b;
+            padding: 2rem;
+            border-radius: 1rem;
+            width: 100%;
+            max-width: 500px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h1 {
+            margin-top: 0;
+            color: #38bdf8;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+            color: #94a3b8;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        input,
+        select {
+            width: 100%;
+            padding: 0.75rem;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            color: white;
+            font-size: 1rem;
+        }
+
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.5rem;
+            background: #0f172a;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #334155;
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .checkbox-item input {
+            width: auto;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.2s;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        button:hover {
+            background: #2563eb;
+        }
+
+        #result {
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            font-family: monospace;
+            word-break: break-all;
+            display: none;
+        }
+
+        .copy-btn {
+            background: #334155;
+            margin-top: 0.5rem;
+            padding: 0.5rem;
+            font-size: 0.875rem;
+        }
+
+        .mode-badge {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: #ef4444;
+            color: white;
+            font-size: 0.75rem;
+            border-radius: 9999px;
+            font-weight: bold;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="card">
+        <span class="mode-badge">INTERNAL USE ONLY</span>
+        <h1>License Generator</h1>
+
+        <div class="form-group">
+            <label>Customer Name</label>
+            <input type="text" id="customer" placeholder="e.g. Acme Corp" value="Custmr-001">
+        </div>
+
+        <div class="form-group">
+            <label>Plan Type</label>
+            <select id="plan" onchange="updateFeatures()">
+                <option value="COMMUNITY" selected>Community (Free)</option>
+                <option value="ENTERPRISE">Enterprise (All Features)</option>
+            </select>
+        </div>
+
+        <div class="form-group">
+            <label>Features</label>
+            <div class="checkbox-group">
+                <div class="checkbox-item"><input type="checkbox" value="scanning" checked> Vulnerability Scanning</div>
+                <div class="checkbox-item"><input type="checkbox" value="cost_intel" checked> Cost Intelligence</div>
+                <div class="checkbox-item"><input type="checkbox" value="policy_engine" checked> OPA Policies</div>
+                <div class="checkbox-item"><input type="checkbox" value="team" checked> Team Management</div>
+                <div class="checkbox-item"><input type="checkbox" value="sso" checked> SSO / SAML</div>
+                <div class="checkbox-item"><input type="checkbox" value="audit_logs" checked> Audit Logs</div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Expiry (Days)</label>
+            <input type="number" id="expiry" value="365">
+        </div>
+
+        <button onclick="generateLicense()">Generate Key</button>
+
+        <div id="result">
+            <label style="margin-bottom: 0.5rem;">Generated License Key:</label>
+            <div id="keyOutput" style="color: #4ade80;"></div>
+            <button class="copy-btn" onclick="copyKey()">Copy to Clipboard</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script>
+        function updateFeatures() {
+            const plan = document.getElementById('plan').value;
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+
+            if (plan === 'COMMUNITY') {
+                checkboxes.forEach(cb => {
+                    // Community has no advanced features by default
+                    cb.checked = false;
+                });
+            } else if (plan === 'ENTERPRISE') {
+                checkboxes.forEach(cb => {
+                    // Enterprise has all features
+                    cb.checked = true;
+                });
+            }
+        }
+
+        // Initialize features on load
+        window.onload = updateFeatures;
+
+        function generateLicense() {
+            const customer = document.getElementById('customer').value;
+            const plan = document.getElementById('plan').value;
+            const expiryDays = parseInt(document.getElementById('expiry').value);
+
+            // Get selected features
+            const features = Array.from(document.querySelectorAll('input[type="checkbox"]:checked'))
+                .map(cb => cb.value);
+
+            // Calculate expiry timestamp (in seconds)
+            const now = Math.floor(Date.now() / 1000);
+            const exp = now + (expiryDays * 24 * 60 * 60);
+
+            // Create JWT Payload
+            const payload = {
+                sub: customer,
+                plan: plan,
+                features: features,
+                exp: exp,
+                iat: now
+            };
+
+            // Create Unsigned JWT (Alg: none)
+            // Header: {"alg": "none"}
+            const header = { alg: "none" };
+
+            const encodedHeader = btoa(JSON.stringify(header)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+            const encodedPayload = btoa(JSON.stringify(payload)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+            const token = `${encodedHeader}.${encodedPayload}.`;
+
+            document.getElementById('keyOutput').innerText = token;
+            document.getElementById('result').style.display = 'block';
+
+            // Generate and Download PDF
+            downloadPDF(customer, plan, expiryDays, features, token);
+        }
+
+        function downloadPDF(customer, plan, expiryDays, features, token) {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            // Set styling
+            doc.setFillColor(30, 41, 59); // Dark background like the UI
+            doc.rect(0, 0, 210, 297, 'F');
+
+            doc.setTextColor(56, 189, 248); // Light Blue Title
+            doc.setFontSize(22);
+            doc.text("RegistryX License Key", 20, 30);
+
+            doc.setTextColor(255, 255, 255); // White Text
+            doc.setFontSize(14);
+
+            let y = 50;
+            const lineHeight = 10;
+
+            doc.text(`Customer Name: ${customer}`, 20, y);
+            y += lineHeight;
+            doc.text(`Plan Type: ${plan}`, 20, y);
+            y += lineHeight;
+
+            const expiryDate = new Date();
+            expiryDate.setDate(expiryDate.getDate() + expiryDays);
+            doc.text(`Expiration Date: ${expiryDate.toLocaleDateString()}`, 20, y);
+            y += lineHeight * 2;
+
+            doc.setTextColor(148, 163, 184); // Gray Label
+            doc.text("Included Features:", 20, y);
+            y += lineHeight;
+
+            doc.setTextColor(255, 255, 255); // White List
+            doc.setFontSize(12);
+            features.forEach(feature => {
+                doc.text(`- ${feature}`, 25, y);
+                y += 8;
+            });
+
+            y += lineHeight;
+            doc.setTextColor(148, 163, 184); // Gray Label
+            doc.setFontSize(14);
+            doc.text("License Token:", 20, y);
+            y += lineHeight;
+
+            doc.setTextColor(74, 222, 128); // Green Token
+            doc.setFontSize(10);
+
+            // Split token into multiple functional lines
+            const splitToken = doc.splitTextToSize(token, 170);
+            doc.text(splitToken, 20, y);
+
+            doc.save(`RegistryX_License_${customer}.pdf`);
+        }
+
+        function copyKey() {
+            const key = document.getElementById('keyOutput').innerText;
+            navigator.clipboard.writeText(key);
+            alert('Copied!');
+        }
+    </script>
+</body>
+
+</html>

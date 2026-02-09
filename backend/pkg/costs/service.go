@@ -20,6 +20,8 @@ type CostConfig struct {
 	StorageCostPerGBMonth float64 // e.g., $0.023 for S3 Standard
 	BandwidthCostPerGB    float64 // e.g., $0.09 for S3 egress
 	RegistryRegion        string
+	CostMode              string  // "CLOUD" or "ONPREM"
+	StorageCapacityTB     float64
 }
 
 // ImageCost represents the cost breakdown for an image
@@ -66,6 +68,8 @@ func NewService(db *sql.DB, config *CostConfig) *Service {
 			StorageCostPerGBMonth: 0.023,
 			BandwidthCostPerGB:    0.09,
 			RegistryRegion:        "us-east-1",
+			CostMode:              "CLOUD",
+			StorageCapacityTB:     10.0,
 		}
 	}
 	return &Service{
@@ -76,10 +80,22 @@ func NewService(db *sql.DB, config *CostConfig) *Service {
 
 // CalculateImageCost calculates the cost for a single image
 func (s *Service) CalculateImageCost(sizeBytes int64, pullCount int) ImageCost {
-	sizeGB := float64(sizeBytes) / 1e9
+	sizeGB := float64(sizeBytes) / 1e9 // 1GB = 10^9 bytes (decimal) or 2^30 (binary)? S3 uses binary for billing usually, but let's stick to simple
 	
-	storageCost := sizeGB * s.Config.StorageCostPerGBMonth
-	bandwidthCost := sizeGB * float64(pullCount) * s.Config.BandwidthCostPerGB
+	var storageCost, bandwidthCost float64
+
+	if s.Config.CostMode == "ONPREM" {
+		// ONPREM: Calculate "Efficiency Cost" (Amortized Hardware)
+		// User provided "StorageCostPerGBMonth" acts as "Hardware Cost Per GB" setting
+		storageCost = sizeGB * s.Config.StorageCostPerGBMonth 
+		// Bandwidth is usually free internally, but we can track it if set
+		bandwidthCost = 0 
+	} else {
+		// CLOUD: Standard SaaS Pricing
+		storageCost = sizeGB * s.Config.StorageCostPerGBMonth
+		bandwidthCost = sizeGB * float64(pullCount) * s.Config.BandwidthCostPerGB
+	}
+
 	totalCost := storageCost + bandwidthCost
 	
 	costPerPull := 0.0
@@ -278,7 +294,7 @@ func (s *Service) DetectZombieImages(ctx context.Context, daysThreshold int, use
 			m.id,
 			r.name as repository,
 			COALESCE(t.name, 'latest') as tag,
-			EXTRACT(DAY FROM (NOW() - COALESCE(m.last_pulled_at, m.created_at))) as days_since_pull,
+			CAST(EXTRACT(DAY FROM (NOW() - COALESCE(m.last_pulled_at, m.created_at))) AS INTEGER) as days_since_pull,
 			COALESCE(sc.storage_cost_usd, 0) as storage_cost
 		FROM manifests m
 		JOIN repositories r ON m.repository_id = r.id

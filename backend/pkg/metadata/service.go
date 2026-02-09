@@ -163,7 +163,7 @@ func (s *Service) GetRepositories(ctx context.Context, userID uuid.UUID, role st
     whereClause := "1=1"
     args := []interface{}{}
     if role != "admin" {
-        whereClause = "r.owner_id = $1"
+        whereClause = "n.owner_id = $1"
         args = append(args, userID)
     }
 
@@ -197,12 +197,14 @@ func (s *Service) GetDigest(ctx context.Context, manifestID uuid.UUID) (string, 
 	return digest, err
 }
 
-// GetManifestDetails retrieves digest, size, and media_type for a manifest UUID.
-func (s *Service) GetManifestDetails(ctx context.Context, manifestID uuid.UUID) (string, int64, string, error) {
+// GetManifestDetails retrieves digest, size, media_type, created_at, and pull_count for a manifest UUID.
+func (s *Service) GetManifestDetails(ctx context.Context, manifestID uuid.UUID) (string, int64, string, time.Time, int, error) {
 	var digest, mediaType string
 	var size int64
-	err := s.DB.QueryRowContext(ctx, "SELECT digest, size, media_type FROM manifests WHERE id = $1", manifestID).Scan(&digest, &size, &mediaType)
-	return digest, size, mediaType, err
+    var createdAt time.Time
+    var pullCount int
+	err := s.DB.QueryRowContext(ctx, "SELECT digest, size, media_type, created_at, COALESCE(pull_count, 0) FROM manifests WHERE id = $1", manifestID).Scan(&digest, &size, &mediaType, &createdAt, &pullCount)
+	return digest, size, mediaType, createdAt, pullCount, err
 }
 
 // HasSignature checks if a manifest has a corresponding Cosign signature tag.
@@ -635,7 +637,7 @@ func (s *Service) GetDashboardStats(ctx context.Context, userID uuid.UUID, role 
     args := []interface{}{}
     
     if role != "admin" {
-        whereNamespace = "r.owner_id = $1"
+        whereNamespace = "n.owner_id = $1"
         args = append(args, userID)
     }
 
@@ -813,7 +815,7 @@ func (s *Service) GetDependencyGraph(ctx context.Context, repoName string, userI
     // They can see parents (base images) even if public, as long as it links to their child.
     // (Or we can restrict entirely, but usually you want to see "My App depends on Alpine")
     if role != "admin" {
-        whereClause = "r.owner_id = $1"
+        whereClause = "n.owner_id = $1"
         args = append(args, userID)
     }
 

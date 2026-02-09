@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/registryx/registryx/backend/pkg/audit"
+	"github.com/registryx/registryx/backend/pkg/config"
 	"github.com/registryx/registryx/backend/pkg/email"
 )
 
@@ -31,10 +32,11 @@ type Service struct {
 	Audit     *audit.Service
 	Redis     *redis.Client
 	JWTSecret string
+	Config    *config.Config
 }
 
-func NewService(db *sql.DB, email *email.Service, audit *audit.Service, redisClient *redis.Client, jwtSecret string) *Service {
-	return &Service{DB: db, Email: email, Audit: audit, Redis: redisClient, JWTSecret: jwtSecret}
+func NewService(db *sql.DB, email *email.Service, audit *audit.Service, redisClient *redis.Client, jwtSecret string, cfg *config.Config) *Service {
+	return &Service{DB: db, Email: email, Audit: audit, Redis: redisClient, JWTSecret: jwtSecret, Config: cfg}
 }
 
 // Create generates a new service account and API Key.
