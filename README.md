@@ -169,7 +169,7 @@ docker-compose -f deploy/docker-compose.yml up -d
 ```
 URL: http://localhost:5173
 Username: admin
-Password: password@123
+Password: admin@123
 ```
 
 ⚠️ **Important**: Change the default password immediately in production!
