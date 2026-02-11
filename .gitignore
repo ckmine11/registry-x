@@ -40,6 +40,7 @@ backend/backend
 # Local/Temp scripts
 test_push.ps1
 push_avinash.ps1
+verify_avinash_repos.ps1
 test-email.go
 *.zip
 deploy/data/

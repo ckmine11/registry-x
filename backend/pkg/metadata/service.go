@@ -163,7 +163,7 @@ func (s *Service) GetRepositories(ctx context.Context, userID uuid.UUID, role st
     whereClause := "1=1"
     args := []interface{}{}
     if role != "admin" {
-        whereClause = "n.owner_id = $1"
+        whereClause = "n.owner_id = $1 OR r.owner_id = $1"
         args = append(args, userID)
     }
 
