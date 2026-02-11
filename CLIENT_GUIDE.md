@@ -80,7 +80,9 @@ Access the dashboard at `http://<your-server-ip>:5173`. Use the following defaul
 - **Username:** `admin`
 - **Password:** `admin@123`
 
-**CRITICAL:** Change the administrator password immediately after logging in via the **Settings > Users** menu.
+> **⚠️ CRITICAL SECURITY WARNING:**  
+> **You MUST change the default administrator password immediately after your first login.**  
+> Go to **Settings > Users**, click on the **Edit** icon next to the Admin user, and update the password. Failure to do so will leave your registry vulnerable.
 
 ---
 
