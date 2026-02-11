@@ -18,6 +18,7 @@ import DependencyGraph from './pages/DependencyGraph';
 import CostIntelligence from './pages/CostIntelligence';
 import Sessions from './pages/Sessions';
 import Landing from './pages/Landing';
+import QuickStart from './pages/QuickStart';
 
 import { Loader2 } from 'lucide-react';
 
@@ -83,6 +84,7 @@ function App() {
                             <Route path="policies" element={<SecurityPolicies />} />
                             <Route path="settings" element={<Settings />} />
                             <Route path="profile" element={<UserProfile />} />
+                            <Route path="quickstart" element={<QuickStart />} />
 
                             {/* Inner Catch-all */}
                             <Route path="*" element={<Navigate to="/app/dashboard" replace />} />

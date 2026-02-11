@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Library, LogOut, Search, User, Shield, Settings, GitBranch, DollarSign, Activity, Bell, Lock, AlertCircle } from 'lucide-react';
+import { LayoutDashboard, Library, LogOut, Search, User, Shield, Settings, GitBranch, DollarSign, Activity, Bell, Lock, AlertCircle, Terminal } from 'lucide-react';
 import { useAuth } from '../lib/auth-context';
 import { Outlet } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -128,6 +128,7 @@ export default function Layout() {
                         <nav className="space-y-1">
                             <NavLink to="/app/dashboard" icon={<LayoutDashboard />} label="Dashboard" collapsed={isSidebarCollapsed} />
                             <NavLink to="/app/repositories" icon={<Library />} label="Repositories" collapsed={isSidebarCollapsed} />
+                            <NavLink to="/app/quickstart" icon={<Terminal />} label="Quick Start" collapsed={isSidebarCollapsed} />
                             <NavLink to="/app/lineage" icon={<GitBranch />} label="Lineage" collapsed={isSidebarCollapsed} />
                             {enableCostIntelligence && (
                                 <NavLink
