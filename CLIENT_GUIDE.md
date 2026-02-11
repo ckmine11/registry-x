@@ -20,18 +20,22 @@ Update these variables immediately to secure the installation:
 - `POSTGRES_PASSWORD`: A strong password for the database.
 - `MINIO_ROOT_PASSWORD`: A strong password for the storage backend.
 
-**How to generate your `JWT_SECRET`:**
-RegistryX uses this secret to sign authentication tokens. To generate a secure secret, run one of the following commands in your terminal and paste the output into the `JWT_SECRET` field in `.env`:
+---
 
-*   **Option A (Using OpenSSL):**
-    ```bash
-    openssl rand -base64 32
-    ```
-*   **Option B (Using PowerShell - Windows):**
-    ```powershell
-    [Convert]::ToBase64String((1..32 | % { [byte](Get-Random -Minimum 0 -Maximum 255) }))
-    ```
-*   **Option C (Manual):** Type a minimum of 32 characters consisting of random letters, numbers, and symbols.
+### ⚡ Quick Secret Generator (Copy & Run)
+If you don't want to create secrets manually, use these one-liner scripts to generate a secure **JWT_SECRET** immediately:
+
+#### For Windows (PowerShell):
+```powershell
+$secret = [Convert]::ToBase64String((1..32 | % { [byte](Get-Random -Minimum 0 -Maximum 255) })); Write-Host "Your JWT_SECRET is: $secret"
+```
+
+#### For Linux / MacOS (Terminal):
+```bash
+echo "Your JWT_SECRET is: $(openssl rand -base64 32)"
+```
+
+> **Note:** Copy the output of the command above and paste it into the `JWT_SECRET=` field in your `deploy/.env` file.
 
 ### 2. URL Settings
 Replace `localhost` with the client's actual domain or server IP:
