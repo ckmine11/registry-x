@@ -19,6 +19,19 @@ data:
   POLICY_ENVIRONMENT: "production"
   ENABLE_IMMUTABLE_TAGS: "false"
   ENABLE_COST_INTELLIGENCE: "true"
+
+  # URLs & CORS
+  BACKEND_URL: "http://localhost:5000"
+  FRONTEND_URL: "http://localhost:5173"
+  CORS_ALLOWED_ORIGINS: "http://localhost:5173"
+
+  # Cost Intelligence (Defaulting to On-Prem matching the .env)
+  COST_MODE: "ONPREM"
+  STORAGE_CAPACITY_TB: "50"
+  STORAGE_COST_PER_GB_MONTH: "0.03"
+  BANDWIDTH_COST_PER_GB: "0.09"
+
+  # Email Settings
   SMTP_HOST: "smtp.gmail.com"
   SMTP_PORT: "587"
   SMTP_FROM: "registryx-noreply@example.com"
@@ -32,9 +45,10 @@ metadata:
 type: Opaque
 stringData:
   # CHANGE THESE IN PRODUCTION!
-  POSTGRES_PASSWORD: "password123"
+  POSTGRES_PASSWORD: "secure-postgres-password-change-me"
   MINIO_ROOT_USER: "admin"
-  MINIO_ROOT_PASSWORD: "password123"
-  JWT_SECRET: "change-this-secret-key-immediately"
+  MINIO_ROOT_PASSWORD: "secure-minio-password-change-me"
+  JWT_SECRET: "secure-random-secret-key-change-me"
   SMTP_USER: "your-email@gmail.com"
   SMTP_PASS: "your-app-password"
+  REGISTRYX_LICENSE_KEY: ""
