@@ -17,15 +17,6 @@ const QuickStart = () => {
                     <p className="text-gray-400 text-sm font-medium leading-relaxed mb-8 max-w-2xl">
                         Welcome to the RegistryX Command Center. Follow these steps to authenticate and push your first image to the secure vault.
                     </p>
-
-                    <div className="flex flex-wrap gap-4">
-                        <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 rounded-xl border border-green-500/20 text-green-400 text-[10px] font-black uppercase tracking-widest">
-                            <ShieldCheck size={14} /> CLI Authorized
-                        </div>
-                        <div className="flex items-center gap-2 px-4 py-2 bg-blue-500/10 rounded-xl border border-blue-500/20 text-blue-400 text-[10px] font-black uppercase tracking-widest">
-                            <Database size={14} /> Port 5000 Active
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -45,7 +36,7 @@ const QuickStart = () => {
                         number="02"
                         title="Tag your Image"
                         desc="Prepare your local image for the registry by giving it a full OCI address."
-                        cmd="docker tag my-app:latest localhost:5000/avinash/my-app:v1"
+                        cmd={`docker tag repo-name:latest localhost:5000/library/repo-name:latest`}
                         label="TAG"
                     />
 
@@ -53,7 +44,7 @@ const QuickStart = () => {
                         number="03"
                         title="Upload to Vault"
                         desc="Push the image to our secure storage. Scanning will trigger automatically."
-                        cmd="docker push localhost:5000/avinash/my-app:v1"
+                        cmd={`docker push localhost:5000/library/repo-name:latest`}
                         label="PUSH"
                     />
 
@@ -61,7 +52,7 @@ const QuickStart = () => {
                         number="04"
                         title="Verify Scan & Score"
                         desc="Pull the image to verify security policies have been evaluated."
-                        cmd="docker pull localhost:5000/avinash/my-app:v1"
+                        cmd={`docker pull localhost:5000/library/repo-name:latest`}
                         label="PULL"
                     />
                 </div>
@@ -74,7 +65,7 @@ const QuickStart = () => {
                             <h3 className="font-black uppercase text-[11px] tracking-widest">Expert Tip</h3>
                         </div>
                         <p className="text-[11px] text-gray-500 leading-relaxed uppercase font-bold tracking-tight">
-                            Use the <span className="text-white">namespace/repo</span> format to organize images. Your personal namespace is already allocated based on your username.
+                            Use the <span className="text-white">library/repo-name</span> format to organize images. Your personal namespace is already allocated based on your username.
                         </p>
                     </div>
 
@@ -88,15 +79,6 @@ const QuickStart = () => {
                         </p>
                     </div>
 
-                    <div className="p-8 rounded-3xl bg-gradient-to-br from-blue-600 to-purple-600 relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" />
-                        <Download className="text-white/20 absolute -bottom-4 -right-4 w-32 h-32 group-hover:scale-110 transition-transform" />
-                        <h4 className="text-lg font-black text-white uppercase tracking-tighter mb-2 relative z-10">Download CLI Client</h4>
-                        <p className="text-white/70 text-[10px] font-bold uppercase tracking-widest mb-6 relative z-10">Control RegistryX from your native terminal.</p>
-                        <button className="w-full py-3 bg-white text-blue-600 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-xl relative z-10 active:scale-95 transition-all">
-                            Coming Soon
-                        </button>
-                    </div>
                 </div>
             </div>
         </div>

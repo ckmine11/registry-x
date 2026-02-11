@@ -4,7 +4,6 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Repositories from './pages/Repositories';
 import RepositoryDetails from './pages/RepositoryDetails';
-import PolicySettings from './pages/PolicySettings';
 import SecurityPolicies from './pages/SecurityPolicies';
 import Settings from './pages/Settings';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Box, Tag, Plus, Terminal, Copy, Check, Trash2, ArrowRight, ShieldCheck, Database, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { Search, Filter, Box, Tag, Plus, Terminal, Copy, Check, Trash2, ArrowRight, ShieldCheck, Database, LayoutGrid, List as ListIcon, Zap } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { registry } from '../lib/api';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -12,6 +12,7 @@ const Repositories = () => {
     const [searchTerm, setSearchTerm] = useState('');
     const [createRepoName, setCreateRepoName] = useState('');
     const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [isPushGuideOpen, setIsPushGuideOpen] = useState(false);
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
     const [showSearchDropdown, setShowSearchDropdown] = useState(false);
     const searchInputRef = React.useRef<HTMLInputElement>(null);
@@ -150,6 +151,14 @@ const Repositories = () => {
                     </div>
 
                     <button
+                        onClick={() => setIsPushGuideOpen(true)}
+                        className="flex items-center gap-3 bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all border border-white/5 active:scale-95"
+                    >
+                        <Terminal size={16} />
+                        How to Push?
+                    </button>
+
+                    <button
                         onClick={() => setIsCreateOpen(true)}
                         className="flex items-center gap-3 bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all shadow-[0_0_25px_rgba(37,99,235,0.3)] active:scale-95"
                     >
@@ -165,10 +174,27 @@ const Repositories = () => {
                     {[1, 2, 3].map(i => <div key={i} className="h-48 cyber-card animate-pulse" />)}
                 </div>
             ) : filteredRepos.length === 0 ? (
-                <div className="cyber-card p-20 flex flex-col items-center justify-center text-center">
+                <div className="cyber-card p-20 flex flex-col items-center justify-center text-center bg-gradient-to-br from-blue-600/5 to-purple-500/5">
                     <Database size={64} className="text-gray-700 mb-6" />
                     <h2 className="text-2xl font-black uppercase text-white mb-2 tracking-tighter">Vault Segment Empty</h2>
-                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest">No matching repository entities found in index.</p>
+                    <p className="text-xs font-mono text-gray-500 uppercase tracking-widest mb-10">No matching repository entities found in index.</p>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl">
+                        <div className="cyber-card p-6 border-blue-500/20 text-left">
+                            <div className="flex items-center gap-3 mb-4 text-blue-400">
+                                <Terminal size={18} />
+                                <h3 className="font-black uppercase text-[11px] tracking-widest">Step 1: Tag</h3>
+                            </div>
+                            <CommandBlock cmd={`docker tag repo-name:latest localhost:5000/library/repo-name:latest`} label="CMD" />
+                        </div>
+                        <div className="cyber-card p-6 border-purple-500/20 text-left">
+                            <div className="flex items-center gap-3 mb-4 text-purple-400">
+                                <Plus size={18} />
+                                <h3 className="font-black uppercase text-[11px] tracking-widest">Step 2: Push</h3>
+                            </div>
+                            <CommandBlock cmd={`docker push localhost:5000/library/repo-name:latest`} label="CMD" />
+                        </div>
+                    </div>
                 </div>
             ) : (
                 <div className={clsx(
@@ -183,6 +209,57 @@ const Repositories = () => {
                             onRequestDelete={setRepoToDelete}
                         />
                     ))}
+                </div>
+            )}
+
+            {/* Push Guide Modal */}
+            {isPushGuideOpen && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/90 p-6 backdrop-blur-xl">
+                    <div className="cyber-card max-w-3xl w-full p-10 relative overflow-hidden">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-purple-500" />
+
+                        <div className="flex items-center justify-between mb-8">
+                            <div className="flex items-center gap-4">
+                                <div className="w-12 h-12 rounded-2xl bg-blue-500 flex items-center justify-center text-white shadow-lg shadow-blue-500/20">
+                                    <Zap size={24} />
+                                </div>
+                                <div>
+                                    <h2 className="text-3xl font-black text-white uppercase tracking-tighter">Quick Push Guide</h2>
+                                    <p className="text-gray-500 text-[10px] font-bold uppercase tracking-widest">Internal Registry Ops</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsPushGuideOpen(false)} className="text-gray-500 hover:text-white p-2">
+                                <Plus className="rotate-45" size={24} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-8">
+                            <GuideItem
+                                title="1. Registry Login"
+                                cmd={`docker login localhost:5000`}
+                                desc="Authenticate your local Docker client."
+                            />
+                            <GuideItem
+                                title="2. Tag Application"
+                                cmd={`docker tag repo-name:latest localhost:5000/library/repo-name:latest`}
+                                desc="Prepare image for the vault storage."
+                            />
+                            <GuideItem
+                                title="3. Push to Vault"
+                                cmd={`docker push localhost:5000/library/repo-name:latest`}
+                                desc="Upload image and trigger security scans."
+                            />
+                        </div>
+
+                        <div className="mt-10 pt-8 border-t border-white/5 flex justify-end">
+                            <button
+                                onClick={() => setIsPushGuideOpen(false)}
+                                className="px-8 py-3 bg-white/5 hover:bg-white/10 text-white rounded-xl font-black uppercase text-[10px] tracking-widest border border-white/10 transition-all"
+                            >
+                                Got it
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -209,10 +286,10 @@ const Repositories = () => {
                                     <div className="absolute left-5 top-1/2 -translate-y-1/2 text-gray-600 font-mono text-xs uppercase select-none group-focus-within:text-blue-500 transition-colors tracking-tighter">registry.local:5000 /</div>
                                     <input
                                         type="text"
-                                        placeholder="NAMESPACE / APP_NAME"
+                                        placeholder="LIBRARY / REPO-NAME"
                                         className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-40 pr-6 text-white text-xs font-mono font-bold uppercase tracking-widest focus:outline-none focus:border-blue-500/30 focus:bg-white/[0.02] transition-all shadow-inner"
                                         value={createRepoName}
-                                        onChange={(e) => setCreateRepoName(e.target.value)}
+                                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setCreateRepoName(e.target.value)}
                                     />
                                 </div>
                             </div>
@@ -221,8 +298,8 @@ const Repositories = () => {
                                 <p className="text-[10px] font-black text-gray-500 uppercase tracking-widest">Initialization Instructions</p>
                                 <div className="space-y-2 font-mono text-[10px] uppercase">
                                     <CommandBlock cmd="docker login localhost:5000" label="AUTH" />
-                                    <CommandBlock cmd={`docker tag app:latest localhost:5000/${createRepoName || 'project/image'}:latest`} label="TAG" />
-                                    <CommandBlock cmd={`docker push localhost:5000/${createRepoName || 'project/image'}:latest`} label="PUSH" />
+                                    <CommandBlock cmd={`docker tag repo-name:latest localhost:5000/${createRepoName || 'library/repo-name'}:latest`} label="TAG" />
+                                    <CommandBlock cmd={`docker push localhost:5000/${createRepoName || 'library/repo-name'}:latest`} label="PUSH" />
                                 </div>
                             </div>
                         </div>
@@ -414,6 +491,18 @@ const RepositoryComponent = ({ name, onCopy, viewMode, onRequestDelete }: { name
                     <ArrowRight size={14} />
                 </Link>
             </div>
+        </div>
+    );
+};
+
+const GuideItem = ({ title, cmd, desc }: { title: string, cmd: string, desc: string }) => {
+    return (
+        <div className="space-y-3">
+            <div className="flex justify-between items-baseline">
+                <h4 className="text-xs font-black text-blue-400 uppercase tracking-widest">{title}</h4>
+                <span className="text-[10px] text-gray-700 font-mono uppercase tracking-widest">{desc}</span>
+            </div>
+            <CommandBlock cmd={cmd} label="CLI" />
         </div>
     );
 };

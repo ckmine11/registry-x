@@ -136,9 +136,6 @@ func main() {
 		}()
 	}
 
-	// 8. Webhook Service
-	webhookService = webhook.NewService(dbConn)
-
 	// 9. Email Service
 	emailService := email.NewService(cfg)
 	

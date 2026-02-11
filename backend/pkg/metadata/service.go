@@ -632,22 +632,22 @@ func (s *Service) GetPreviousHealthScore(ctx context.Context, manifestID uuid.UU
 func (s *Service) GetDashboardStats(ctx context.Context, userID uuid.UUID, role string) (*DashboardStats, error) {
     stats := &DashboardStats{}
 
-    // Isolation Clause
-    whereNamespace := "1=1"
+    // Isolation Clause: Check both Namespace and Repository ownership
+    whereClause := "1=1"
     args := []interface{}{}
     
     if role != "admin" {
-        whereNamespace = "n.owner_id = $1"
+        whereClause = "(n.owner_id = $1 OR r.owner_id = $1)"
         args = append(args, userID)
     }
 
     // 1. Count Repositories
-    repoQuery := fmt.Sprintf("SELECT COUNT(*) FROM repositories r JOIN namespaces n ON r.namespace_id = n.id WHERE %s", whereNamespace)
+    repoQuery := fmt.Sprintf("SELECT COUNT(*) FROM repositories r JOIN namespaces n ON r.namespace_id = n.id WHERE %s", whereClause)
     err := s.DB.QueryRowContext(ctx, repoQuery, args...).Scan(&stats.Repositories)
     if err != nil { return nil, err }
 
     // 2. Count Images (Manifests)
-    manifestQuery := fmt.Sprintf("SELECT COUNT(*) FROM manifests JOIN repositories r ON manifests.repository_id = r.id JOIN namespaces n ON r.namespace_id = n.id WHERE %s", whereNamespace)
+    manifestQuery := fmt.Sprintf("SELECT COUNT(*) FROM manifests JOIN repositories r ON manifests.repository_id = r.id JOIN namespaces n ON r.namespace_id = n.id WHERE %s", whereClause)
     err = s.DB.QueryRowContext(ctx, manifestQuery, args...).Scan(&stats.Images)
     if err != nil { return nil, err }
 
@@ -669,7 +669,7 @@ func (s *Service) GetDashboardStats(ctx context.Context, userID uuid.UUID, role 
             JOIN namespaces n ON r.namespace_id = n.id
             WHERE vr.status = 'completed' AND %s
             ORDER BY vr.manifest_id, vr.scanned_at DESC
-        ) latest_reports`, whereNamespace)
+        ) latest_reports`, whereClause)
 
     err = s.DB.QueryRowContext(ctx, vulnQuery, args...).Scan(
             &stats.Vulnerabilities,
@@ -691,7 +691,7 @@ func (s *Service) GetDashboardStats(ctx context.Context, userID uuid.UUID, role 
         JOIN namespaces n ON r.namespace_id = n.id
         JOIN manifest_layers ml ON m.id = ml.manifest_id
         JOIN blobs b ON ml.blob_digest = b.digest
-        WHERE %s`, whereNamespace)
+        WHERE %s`, whereClause)
     err = s.DB.QueryRowContext(ctx, storageQuery, args...).Scan(&stats.StorageBytes)
     if err != nil { return nil, err }
 
@@ -704,7 +704,7 @@ func (s *Service) GetDashboardStats(ctx context.Context, userID uuid.UUID, role 
         LEFT JOIN tags t ON t.manifest_id = m.id
         WHERE %s
         ORDER BY m.created_at DESC
-        LIMIT 5`, whereNamespace)
+        LIMIT 5`, whereClause)
 
 
     rows, err := s.DB.QueryContext(ctx, pushesQuery, args...)
