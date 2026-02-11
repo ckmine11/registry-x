@@ -70,6 +70,8 @@ From the project root, run the following command to build and start all services
 docker-compose -f deploy/docker-compose.yml up -d --build
 ```
 
+> **Note on Database Setup:** RegistryX is designed for zero-config setup. On the first run, the system will automatically create all required database tables and initial data by running the migration files located in `backend/migrations`. No manual SQL execution is required.
+
 ---
 
 ## 🔐 Phase 3: Initial Login
