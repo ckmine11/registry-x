@@ -51,8 +51,14 @@ Replace `localhost` with the client's actual domain or server IP:
 - `BACKEND_URL`: `http://<your-server-ip>:5000`
 - `FRONTEND_URL`: `http://<your-server-ip>:5173`
 
-### 3. Enterprise Plan Activation
-To unlock "Policy Enforcement" and "Cost Intelligence", add a valid license key:
+### 3. Cost Intelligence Setup
+RegistryX is pre-configured for **On-Premise** cost calculation. You can adjust these in `.env`:
+- `COST_MODE`: Set to `ONPREM` (default) or `CLOUD`.
+- `STORAGE_CAPACITY_TB`: Default is `50` TB. Change this to match your actual server storage size.
+- `STORAGE_COST_PER_GB_MONTH`: Amortized cost of your hardware per GB.
+
+### 4. Enterprise Plan Activation
+To unlock "Policy Enforcement" and "Advanced Scanning", add your license key:
 - `REGISTRYX_LICENSE_KEY`: Paste your unique enterprise key here.
 
 ---
