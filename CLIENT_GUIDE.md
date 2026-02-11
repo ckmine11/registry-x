@@ -13,7 +13,13 @@ Ensure the following are installed on the target server:
 ---
 
 ## 🛠️ Phase 1: Environment Configuration
-Before starting the services, navigate to the `deploy/` directory and configure the `.env` file.
+**All configuration is managed inside the `deploy/` directory.** You must use the `.env` file located there.
+
+1.  Open your terminal and enter the deployment directory:
+    ```bash
+    cd deploy
+    ```
+2.  Configure the `.env` file:
 
 ### 1. Security Credentials & JWT Secret
 Update these variables immediately to secure the installation:
@@ -21,7 +27,7 @@ Update these variables immediately to secure the installation:
 - `MINIO_ROOT_PASSWORD`: A strong password for the storage backend.
 
 ---
-
+######################################################################
 ### ⚡ Quick Secret Generator (Copy & Run)
 If you don't want to create secrets manually, use these one-liner scripts to generate a secure **JWT_SECRET** immediately:
 
@@ -36,6 +42,9 @@ echo "Your JWT_SECRET is: $(openssl rand -base64 32)"
 ```
 
 > **Note:** Copy the output of the command above and paste it into the `JWT_SECRET=` field in your `deploy/.env` file.
+
+#######################################################################
+
 
 ### 2. URL Settings
 Replace `localhost` with the client's actual domain or server IP:
